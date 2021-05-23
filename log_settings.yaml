@@ -1,0 +1,59 @@
+---
+version: 1
+disable_existing_loggers: True
+loggers:
+  error:
+    level: ERROR
+    handlers: [file]
+    propagate: False
+  root:
+    level: WARNING
+    handlers: [file]
+    propagate: False
+  info:
+    level: INFO
+    handlers: [file, console]
+    propagate: False
+  debug:
+    level: DEBUG
+    handlers: [file_debug]
+    propagate: False
+handlers:
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: NOTSET
+    formatter: standard
+    filename: base.log
+    mode: a
+    maxBytes: 32_000_000
+    backupCount: 3
+    encoding: utf8
+    delay: False
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: standard
+    stream: ext://sys.stdout
+  file_debug:
+    class: logging.handlers.RotatingFileHandler
+    level: NOTSET
+    formatter: debug
+    filename: debug.log
+    mode: a
+    maxBytes: 32_000_000
+    backupCount: 3
+    encoding: utf8
+    delay: False
+formatters:
+  standard:
+    format: '%(asctime)s, %(levelname)s: %(message)s, место вызова %(filename)s строка %(lineno)d'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+    class: logging.Formatter
+  debug:
+    format: '%(asctime)s, %(levelname)s: %(message)s, ИД - %(process)d, имя процесса - %(processName)s,
+     место вызова %(filename)s, функция %(funcName)s, строка %(lineno)d'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+    class: logging.Formatter
+...
