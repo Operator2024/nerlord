@@ -147,3 +147,6 @@ src
 playbook.yaml
 inventory.yaml
 logsettings.ini
+venv37
+venv39
+tasks.md
