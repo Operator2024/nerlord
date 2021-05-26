@@ -1,4 +1,4 @@
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 __author__ = "Vladimir Belomestnykh"
 
@@ -25,18 +25,13 @@ __copyright__ = "Copyright (c) 2021 Vladimir Belomestnykh for Metropolis Company
                 "SOFTWARE."
 
 import argparse
-import logging.config
-import os
 import sys
 
-from yaml import safe_load, YAMLError
-
 from API import *
-
+from CLI import *
 # from node import *
 # from task import *
 # from API import *
-from typing import *
 from loggers import *
 
 if __name__ == '__main__':
@@ -121,7 +116,12 @@ if __name__ == '__main__':
                         raise argparse.ArgumentError(None, msg)
                     else:
                         if os.path.exists(args.playbook[0]):
-                            pass
+                            resp = verify(filepath=args.playbook[0], filename="playbook.yaml")
+                            if resp == "playbook.yaml is Ok":
+                                logging.getLogger("info").info(f"Verify: {resp}")
+                            else:
+                                logging.getLogger("info").info(f"Verify: {resp}")
+                                raise Exception(resp)
                         else:
                             msg = f"Конфигурационный файл не был найден по указанному пути" \
                                   f" {args.playbook[0]}"
@@ -129,12 +129,60 @@ if __name__ == '__main__':
                             raise FileNotFoundError(msg)
 
                         if os.path.exists(args.inventory[0]):
-                            pass
+                            resp = verify(filepath=args.inventory[0], filename="inventory.yaml")
+                            if resp == "inventory.yaml is Ok":
+                                logging.getLogger("info").info(f"Verify: {resp}")
+                            else:
+                                logging.getLogger("info").info(f"Verify: {resp}")
+                                raise Exception(resp)
                         else:
                             msg = f"Инвентаризационный файл не был найден по указанному пути " \
                                   f"{args.inventory[0]}"
                             logging.getLogger("info").info(msg)
                             raise FileNotFoundError(msg)
+
+                    with open(args.inventory[0], "r", encoding="utf8") as file:
+                        data = safe_load(file)
+
+                    for i in data:
+                        for j in data[i]:
+                            if j != "individual":
+                                if j in ["host", "host_multiple", "host_range"]:
+                                    if j == "host_range":
+                                        ip, rtt, nextip = chooseIP(hosttype=j, data=data[i][j])
+                                        print(ip, rtt, nextip)
+                                        while True:
+                                            if ip != data[i][j][1]:
+                                                ip, rtt, nextip = chooseIP(hosttype=j,
+                                                                           data=data[i][j],
+                                                                           rngip=nextip)
+                                            else:
+                                                break
+                                        print(ip, rtt, nextip)
+                                    else:
+                                        ip, rtt, _ = chooseIP(hosttype=j, data=data[i][j])
+                                        print(ip, rtt)
+                            else:
+                                for k in data[i][j]:
+                                    for z in data[i][j][k]:
+                                        if z in ["host", "host_multiple", "host_range"]:
+                                            if z == "host_range":
+                                                ip, rtt, nextip = chooseIP(hosttype=z,
+                                                                           data=data[i][j][k][z])
+                                                print(ip, rtt, nextip)
+                                                while True:
+                                                    if ip != data[i][j][k][z][1]:
+                                                        ip, rtt, nextip = chooseIP(hosttype=z,
+                                                                                   data=
+                                                                                   data[i][j][k][z],
+                                                                                   rngip=nextip)
+                                                    else:
+                                                        break
+                                                print(ip, rtt, nextip)
+                                            else:
+                                                ip, rtt, _ = chooseIP(hosttype=z,
+                                                                      data=data[i][j][k][z])
+                                                print(ip, rtt)
 
                 else:
                     msg = "Режим CLI требует следующие аргументы, которые не были получены " + missreqArgs
@@ -188,14 +236,16 @@ if __name__ == '__main__':
                                            f" ниже поддерживаемой ")
 
     except FileNotFoundError as err:
-        print(f"Exception - {err}")
+        logging.getLogger("info").info(f"FileNotFoundError: {err}")
     except argparse.ArgumentError as err:
-        print(f"Exception - {err}")
+        logging.getLogger("info").info(f"ArgumentError: {err}")
     except web.HTTPRedirection as err:
-        print(err, 2)
+        print(err, 1)
     except web.HTTPFound as err:
         print(err, 2)
+    except AttributeError as err:
+        logging.getLogger("info").info(f"AttributeError: {err}")
     except Exception as err:
-        print(err)
+        print(err, 3)
     finally:
         pass

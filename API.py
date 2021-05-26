@@ -1,18 +1,16 @@
 import asyncio
 import json
-import logging
 import platform
 import re
-import sys
-import traceback
-from typing import *
+from typing import Text
 
 import asyncssh
 from aiohttp import web
+
 from loggers import nlog
 
 
-async def ping(ip: Text):
+async def ping(ip: Text) -> int:
     current_os = platform.system().lower()
     if current_os == "windows":
         parameter = "-n"
@@ -25,7 +23,7 @@ async def ping(ip: Text):
     return resp.returncode
 
 
-async def redirect(request):
+async def redirect(request: web.Request):
     if request.method == "GET":
         print(request.url)
         if str(request.rel_url) == "/" or re.search("/\?.{1,}", str(request.rel_url)):
@@ -33,7 +31,7 @@ async def redirect(request):
             return web.HTTPFound(location=location)
 
 
-async def do_GET(request: web.BaseRequest):
+async def do_GET(request: web.BaseRequest) -> web.Response:
     headers = {"Content-Language": "en-US, ru-RU, en, ru", "Content-Type": "text/plain"}
     if str(request.rel_url) == "/api":
         return web.Response(text=f"Используйте следующий адрес для запроса - {request.url}",
@@ -68,31 +66,37 @@ async def do_GET(request: web.BaseRequest):
                             logger.info(msg)
                             return web.Response(text=msg, status=200)
                     elif query_params["vendor"] == "SNR":
-                        if "show" not in query_params["command"] or\
+                        if "show" not in query_params["command"] and \
                                 "sh" not in query_params["command"]:
                             logger = nlog("info")
                             logger.info(msg)
                             return web.Response(text=msg, status=200)
 
             for i in ["login", "password", "command"]:
-                if idx == 1:
-                    _path = re.search("(" + f"{i}" + "=\w{1,}&|" + f"{i}" + "=.{1,}$)",
-                                      request.path_qs)
-                    #bugfix params
-                    if request.path_qs[_path.span()[1] - 1] == "&":
-                        _path_qs = re.sub(f"{i}" + "=\w{1,}&", f"{i}={asterisk}&",
+                try:
+                    if idx == 1:
+                        _path = re.search("(" + f"{i}" + "=\w{1,}&|" + f"{i}" + "=.{1,}$)",
                                           request.path_qs)
+                        # bugfix params
+                        if request.path_qs[_path.span()[1] - 1] == "&":
+                            _path_qs = re.sub(f"{i}" + "=\w{1,}&", f"{i}={asterisk}&",
+                                              request.path_qs)
+                        else:
+                            _path_qs = re.sub(f"{i}" + "=.{1,}$", f"{i}={asterisk}",
+                                              request.path_qs)
                     else:
-                        _path_qs = re.sub(f"{i}" + "=.{1,}$", f"{i}={asterisk}",
-                                          request.path_qs)
-                else:
-                    _path = re.search("(" + f"{i}" + "=\w{1,}&|" + f"{i}" + "=.{1,}$)",
-                                      _path_qs)
-                    if _path_qs[_path.span()[1] - 1] == "&":
-                        _path_qs = re.sub(f"{i}" + "=\w{1,}&", f"{i}={asterisk}&", _path_qs)
-                    else:
-                        _path_qs = re.sub(f"{i}" + "=.{1,}$", f"{i}={asterisk}", _path_qs)
-                idx += 1
+                        _path = re.search("(" + f"{i}" + "=\w{1,}&|" + f"{i}" + "=.{1,}$)",
+                                          _path_qs)
+                        if _path_qs[_path.span()[1] - 1] == "&":
+                            _path_qs = re.sub(f"{i}" + "=\w{1,}&", f"{i}={asterisk}&", _path_qs)
+                        else:
+                            _path_qs = re.sub(f"{i}" + "=.{1,}$", f"{i}={asterisk}", _path_qs)
+                    idx += 1
+                except AttributeError as err:
+                    logger = nlog("info")
+                    msg = f"AttributeError: обязательный ключ {i} отсутствует - {err}"
+                    logger.info(msg)
+                    return web.Response(text=msg, headers=headers, status=200)
 
             del _path
             headers["SecureRequest"] = "{} {} HTTP/{}.{}".format(
@@ -109,9 +113,10 @@ async def do_GET(request: web.BaseRequest):
                                                 port=int(query_params["port"]),
                                                 username=query_params["login"],
                                                 password=query_params["password"],
-                                                known_hosts=None) as ssh:
+                                                known_hosts=None,
+                                                login_timeout=10) as ssh:
                         resp = await ssh.run(query_params["command"], check=True, timeout=10)
-                        if resp.returncode != 0:
+                        if resp.returncode != 0 and resp.returncode is not None:
                             raise asyncssh.ConnectionLost(reason="ConnectionLost")
                         result = resp.stdout + resp.stderr
 
@@ -142,18 +147,20 @@ async def do_GET(request: web.BaseRequest):
                     msg = f"ConnectionError: {err}, возможно, хост или порт указаны неверно!"
                     logger.info(msg)
                     return web.Response(text=msg, headers=headers, status=200)
+                except asyncssh.ProcessError as err:
+                    logger = nlog("info")
+                    msg = f"ProcessError: {err}, ошибка SSH!"
+                    logger.info(msg)
+                    return web.Response(text=msg, headers=headers, status=200)
                 except Exception as err:
                     logger = nlog("info")
                     msg = f"Exception: {err}"
                     logger.info(msg)
                     return web.Response(text=msg, headers=headers, status=200)
-
-            if r == 1:
-                print('aaa')
     return web.Response(text=f"Результат - {result}", headers=headers, status=200)
 
 
-async def do_POST(request: web.BaseRequest):
+async def do_POST(request: web.BaseRequest) -> web.Response:
     # headers = {"Content-Type": "application/json; charset=UTF-8"}
     headers = {"Content-Language": "en-US, ru-RU, en, ru", "Content-Type": "text/plain"}
     if request.content:
@@ -192,7 +199,7 @@ async def do_POST(request: web.BaseRequest):
                             logger.info(msg)
                             return web.Response(text=msg, status=200)
                     elif content["vendor"] == "SNR":
-                        if "show" not in content["command"] or \
+                        if "show" not in content["command"] and \
                                 "sh" not in content["command"]:
                             logger = nlog("info")
                             logger.info(msg)
@@ -204,9 +211,10 @@ async def do_POST(request: web.BaseRequest):
                     async with asyncssh.connect(host=content["host"], port=content["port"],
                                                 username=content["login"],
                                                 password=content["password"],
-                                                known_hosts=None) as ssh:
+                                                known_hosts=None,
+                                                login_timeout=10) as ssh:
                         resp = await ssh.run(content["command"], check=True, timeout=10)
-                        if resp.returncode != 0:
+                        if resp.returncode != 0 and resp.returncode is not None:
                             raise asyncssh.ConnectionLost(reason="ConnectionLost")
                         result = resp.stdout + resp.stderr
 
@@ -235,6 +243,11 @@ async def do_POST(request: web.BaseRequest):
                 except ConnectionError as err:
                     logger = nlog("info")
                     msg = f"ConnectionError: {err}, возможно, хост или порт указаны неверно!"
+                    logger.info(msg)
+                    return web.Response(text=msg, headers=headers, status=200)
+                except asyncssh.ProcessError as err:
+                    logger = nlog("info")
+                    msg = f"ProcessError: {err}, ошибка SSH!"
                     logger.info(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except Exception as err:
