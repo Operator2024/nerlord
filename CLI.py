@@ -1,6 +1,10 @@
+import hashlib
+import os
+import re
 from typing import *
 
 import icmplib
+import paramiko
 from yaml import safe_load, YAMLError
 
 
@@ -217,3 +221,101 @@ def chooseIP(hosttype: Text, data: Text or List, rngip: Text = None) -> [str, in
                 result = pong(currentaddr)
                 if result != 1:
                     return [currentaddr, int(result), nextaddr]
+
+
+def ssh(ipv4: Text, login: Text, pasw: Text, path: Text, key: bool = False, cmd: Text = "") -> \
+        bytes:
+    with paramiko.SSHClient() as session:
+        if os.path.exists("known_hosts"):
+            session.load_host_keys("known_hosts")
+        session.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        session.save_host_keys("known_hosts")
+        if key is True:
+            session.connect(hostname=ipv4, username=login, key_filename=path, passphrase=pasw)
+        else:
+            session.connect(hostname=ipv4, username=login, password=pasw)
+        stdin, stdout, stderr = session.exec_command(cmd)
+        return stdout.read() + stderr.read()
+
+
+def taskhashcalc(data: Dict) -> Dict:
+    for i in data:
+        for j in data[i]:
+            if "steps" in data[i]:
+                if j == "steps":
+                    for z in data[i][j]:
+                        if data[i][j][z].get("command"):
+                            data[i][j][z]["md5"] = hashlib.md5(re.sub("\s{1,}", "", data[i][j][z][
+                                "command"]).encode()).hexdigest()
+            elif "step" in data[i]:
+                if isinstance(data[i][j], dict):
+                    if j == "step":
+                        if data[i][j].get("command"):
+                            data[i][j]["md5"] = hashlib.md5(re.sub("\s{1,}", "", data[i][j][
+                                "command"]).encode()).hexdigest()
+    return data
+
+
+def gethash(tasks: Dict, roothash: Text, steps: bool = False) -> Text:
+    if steps is True:
+        _hash = ""
+        for i in tasks:
+            if _hash == "":
+                _hash = hashlib.md5(roothash.encode())
+                _hash.update(tasks[i]["md5"].encode())
+            else:
+                _hash.update(tasks[i]["md5"].encode())
+        return _hash.hexdigest()
+    elif steps is False:
+        _hash = hashlib.md5(roothash.encode())
+        _hash.update(tasks["md5"].encode())
+        return _hash.hexdigest()
+
+
+def cvs(ipv4: Text, tasks: Dict) -> List:
+    if os.path.exists("tasks/"):
+        if os.path.exists(f"tasks/{ipv4}"):
+            if not os.listdir(f"tasks/{ipv4}"):
+                return []
+            else:
+                hashes = dict()
+                for i in os.listdir(f"tasks/{ipv4}"):
+                    _ip, rev, hash = i.split("_")
+                    if int(rev) <= 10:
+                        hashes[rev] = hash
+                    else:
+                        return ["Версия ревизии выше чем 10"]
+                for i in tasks:
+                    for j in tasks[i]:
+                        if len(hashes) == 1:
+                            if j == "steps":
+                                _result = gethash(tasks[i][j], hashes[max(hashes)], True)
+                                if hashes[max(hashes)] != _result:
+                                    return ["Ok", _result]
+                                else:
+                                    return ["Error", _result]
+                            elif j == "step":
+                                _result = gethash(tasks[i][j], hashes[max(hashes)])
+                                if hashes[max(hashes)] != _result:
+                                    return ["Ok", _result]
+                                else:
+                                    return ["Ok", _result]
+                        elif len(hashes) > 1:
+                            if j == "steps":
+                                _result = gethash(tasks[i][j], hashes[max(hashes) - 1], True)
+                                if hashes[max(hashes)] != _result:
+                                    return ["Ok", _result]
+                                else:
+                                    return ["Error", _result]
+                            elif j == "step":
+                                _result = gethash(tasks[i][j], hashes[max(hashes) - 1])
+                                if hashes[max(hashes)] != _result:
+                                    return ["Ok", _result]
+                                else:
+                                    return ["Ok", _result]
+        else:
+            os.mkdir(f"tasks/{ipv4}")
+    elif os.path.exists("tasks/") is False:
+        os.mkdir("tasks")
+        os.mkdir(f"tasks/{ipv4}")
+        return []

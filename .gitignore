@@ -150,3 +150,5 @@ logsettings.ini
 venv37
 venv39
 tasks.md
+tasks
+known_hosts
