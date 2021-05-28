@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 import re
 from typing import *
@@ -256,23 +257,32 @@ def taskhashcalc(data: Dict) -> Dict:
     return data
 
 
-def gethash(tasks: Dict, roothash: Text, steps: bool = False) -> Text:
+def gethash(tasks: Dict, roothash: Text, steps: bool = False) -> Tuple:
     if steps is True:
         _hash = ""
+        _hash_diff = ""
         for i in tasks:
             if _hash == "":
                 _hash = hashlib.md5(roothash.encode())
-                _hash.update(tasks[i]["md5"].encode())
+            if _hash_diff == "":
+                _hash_diff = hashlib.md5(tasks[i]["md5"].encode())
             else:
-                _hash.update(tasks[i]["md5"].encode())
-        return _hash.hexdigest()
+                _hash_diff.update(tasks[i]["md5"].encode())
+        _hash.update(_hash_diff.hexdigest().encode())
+        return _hash.hexdigest(), _hash_diff.hexdigest()
     elif steps is False:
         _hash = hashlib.md5(roothash.encode())
         _hash.update(tasks["md5"].encode())
-        return _hash.hexdigest()
+        return _hash.hexdigest(), tasks["md5"]
 
 
-def cvs(ipv4: Text, tasks: Dict) -> List:
+def writehashstore(ipv4: Text, data: Dict) -> NoReturn:
+    with open(f"tasks/{ipv4}/hashes.json", "w", encoding="utf8") as f:
+        json.dump(fp=f, obj=data)
+
+
+def cvs(ipv4: Text, tasks: Dict, taskn: Set = None) -> List:
+    global _ip
     if os.path.exists("tasks/"):
         if os.path.exists(f"tasks/{ipv4}"):
             if not os.listdir(f"tasks/{ipv4}"):
@@ -280,41 +290,99 @@ def cvs(ipv4: Text, tasks: Dict) -> List:
             else:
                 hashes = dict()
                 for i in os.listdir(f"tasks/{ipv4}"):
-                    _ip, rev, hash = i.split("_")
-                    if int(rev) <= 10:
-                        hashes[rev] = hash
+                    if "hashes" in i:
+                        pass
                     else:
-                        return ["Версия ревизии выше чем 10"]
+                        _ip, rev, hash = i.split("_")
+                        if int(rev) < 900:
+                            hashes[rev] = hash
+                        elif 900 <= int(rev) <= 1000:
+                            return [f"Версия ревизии {rev}! Максимальная ревизия - 1000"]
+                        else:
+                            return ["Версия ревизии выше чем 1000"]
                 for i in tasks:
                     for j in tasks[i]:
+                        if os.path.exists(f"tasks/{_ip}/hashes.json"):
+                            with open(f"tasks/{_ip}/hashes.json", "r", encoding="utf8") as f:
+                                _hashes_storage = json.load(f)
+                            if len(_hashes_storage) == 0:
+                                return ["Error, hashes.json"]
+                        else:
+                            return ["Error, hashes.json"]
                         if len(hashes) == 1:
                             if j == "steps":
-                                _result = gethash(tasks[i][j], hashes[max(hashes)], True)
+                                _result, _diff = gethash(tasks[i][j], hashes[max(hashes)], True)
+                                for v in _hashes_storage.keys():
+                                    if _result == _hashes_storage[v]["orig"]:
+                                        # добавить внятное описание ошибки
+                                        return ["Error", _result]
                                 if hashes[max(hashes)] != _result:
-                                    return ["Ok", _result]
-                                else:
-                                    return ["Error", _result]
+                                    _hashes_storage[max(hashes)]["diff"] = _diff
+                                    _hashes_storage[max(hashes)]["task"] = i
+                                    writehashstore(ipv4=_ip, data=_hashes_storage)
+                                    return ["Ok", _result, int(max(hashes)) + 1, i]
                             elif j == "step":
-                                _result = gethash(tasks[i][j], hashes[max(hashes)])
+                                _result, _diff = gethash(tasks[i][j], hashes[max(hashes)])
+                                for v in _hashes_storage.keys():
+                                    if _result == _hashes_storage[v]["orig"]:
+                                        return ["Error", _result]
                                 if hashes[max(hashes)] != _result:
-                                    return ["Ok", _result]
-                                else:
-                                    return ["Ok", _result]
+                                    _hashes_storage[max(hashes)]["diff"] = _diff
+                                    _hashes_storage[max(hashes)]["task"] = i
+                                    writehashstore(ipv4=_ip, data=_hashes_storage)
+                                    return ["Ok", _result, int(max(hashes)) + 1, i]
                         elif len(hashes) > 1:
-                            if j == "steps":
-                                _result = gethash(tasks[i][j], hashes[max(hashes) - 1], True)
-                                if hashes[max(hashes)] != _result:
-                                    return ["Ok", _result]
-                                else:
-                                    return ["Error", _result]
-                            elif j == "step":
-                                _result = gethash(tasks[i][j], hashes[max(hashes) - 1])
-                                if hashes[max(hashes)] != _result:
-                                    return ["Ok", _result]
-                                else:
-                                    return ["Ok", _result]
+                            if taskn is not None:
+                                _loc_all_task_name = set()
+                                for n in tasks.keys():
+                                    _loc_all_task_name.add(n)
+                                if i in _loc_all_task_name.difference(taskn):
+                                    if j == "steps":
+                                        _result, _diff = gethash(tasks[i][j],
+                                                                 hashes[str(int(max(hashes)) - 1)],
+                                                                 True)
+                                        for v in _hashes_storage.keys():
+                                            if _result == _hashes_storage[v]["orig"]:
+                                                return ["Error", _result]
+                                        if hashes[max(hashes)] != _result:
+                                            _hashes_storage[max(hashes)]["diff"] = _diff
+                                            _hashes_storage[max(hashes)]["task"] = i
+                                            writehashstore(ipv4=_ip, data=_hashes_storage)
+                                            return ["Ok", _result, int(max(hashes)) + 1, i]
+                                    elif j == "step":
+                                        _result, _diff = gethash(tasks[i][j],
+                                                                 hashes[str(int(max(hashes)) - 1)])
+                                        for v in _hashes_storage.keys():
+                                            if _result == _hashes_storage[v]["orig"]:
+                                                return ["Error", _result]
+                                        if hashes[max(hashes)] != _result:
+                                            _hashes_storage[max(hashes)]["diff"] = _diff
+
+                                            _hashes_storage[max(hashes)]["task"] = str(i)
+                                            writehashstore(ipv4=_ip, data=_hashes_storage)
+                                            return ["Ok", _result, int(max(hashes)) + 1, i]
+                            elif taskn is None:
+                                for t in range(int(max(_hashes_storage)), int(min(_hashes_storage)),
+                                               -1):
+                                    if _hashes_storage[str(t)]["task"] == i:
+                                        if t < int(max(_hashes_storage)):
+                                            if "steps" in tasks[i]:
+                                                _result, _diff = gethash(tasks[i]["steps"],
+                                                                         _hashes_storage[str(t)][
+                                                                             "orig"], True)
+                                            elif "step" in tasks[i]:
+                                                _result, _diff = gethash(tasks[i]["step"],
+                                                                         _hashes_storage[str(t)][
+                                                                             "orig"])
+                                            _checkmd5 = hashlib.md5(_hashes_storage[str(t)]
+                                                                    ["orig"].encode())
+                                            _checkmd5.update(_hashes_storage[str(t)]
+                                                             ["diff"].encode())
+                                            if _checkmd5.hexdigest() == _result:
+                                                return ["Changes have already been applied"]
         else:
             os.mkdir(f"tasks/{ipv4}")
+            return []
     elif os.path.exists("tasks/") is False:
         os.mkdir("tasks")
         os.mkdir(f"tasks/{ipv4}")
