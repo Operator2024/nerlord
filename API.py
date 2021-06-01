@@ -23,9 +23,8 @@ async def ping(ip: Text) -> int:
     return resp.returncode
 
 
-async def redirect(request: web.Request):
+async def redirect(request: web.Request) -> web.HTTPFound:
     if request.method == "GET":
-        print(request.url)
         if str(request.rel_url) == "/" or re.search("/\?.{1,}", str(request.rel_url)):
             location = request.app.router["api"].url_for()
             return web.HTTPFound(location=location)

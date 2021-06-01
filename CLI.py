@@ -2,7 +2,8 @@ import hashlib
 import json
 import os
 import re
-from typing import *
+from typing import (NoReturn, Text, Union,
+                    List, Dict, Tuple, Set)
 
 import icmplib
 import paramiko

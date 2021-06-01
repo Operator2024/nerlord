@@ -150,7 +150,7 @@ if __name__ == '__main__':
                                 if j in ["host", "host_multiple", "host_range"]:
                                     if j == "host_range":
                                         ip, rtt, nextip = chooseIP(hosttype=j, data=data[i][j])
-                                        print(ip, rtt, nextip)
+                                        print(ip, rtt, nextip, -2)
                                         while True:
                                             if ip != data[i][j][1]:
                                                 ip, rtt, nextip = chooseIP(hosttype=j,
@@ -158,10 +158,10 @@ if __name__ == '__main__':
                                                                            rngip=nextip)
                                             else:
                                                 break
-                                        print(ip, rtt, nextip)
+                                        print(ip, rtt, nextip, -1)
                                     else:
                                         ip, rtt, _ = chooseIP(hosttype=j, data=data[i][j])
-                                        print(ip, rtt)
+                                        print(ip, rtt, 1)
                             else:
                                 for k in data[i][j]:
                                     for z in data[i][j][k]:
@@ -169,20 +169,22 @@ if __name__ == '__main__':
                                             if z == "host_range":
                                                 ip, rtt, nextip = chooseIP(hosttype=z,
                                                                            data=data[i][j][k][z])
-                                                print(ip, rtt, nextip)
+                                                print(ip, rtt, nextip, 2)
                                                 while True:
-                                                    if ip != data[i][j][k][z][1]:
+                                                    print(ip)
+                                                    # проверить и пофиксить вариант, когда ip недоступен и возвращается строка о недоступности
+                                                    if ip != data[i][j][k][z][1] and ip != "IPv4 адрес не отвечает":
                                                         ip, rtt, nextip = chooseIP(hosttype=z,
                                                                                    data=
                                                                                    data[i][j][k][z],
                                                                                    rngip=nextip)
                                                     else:
                                                         break
-                                                print(ip, rtt, nextip)
+                                                print(ip, rtt, nextip, 3)
                                             else:
                                                 ip, rtt, _ = chooseIP(hosttype=z,
                                                                       data=data[i][j][k][z])
-                                                print(ip, rtt)
+                                                print(ip, rtt, 4)
 
                 else:
                     msg = "Режим CLI требует следующие аргументы, которые не были получены " + missreqArgs
@@ -246,6 +248,6 @@ if __name__ == '__main__':
     except AttributeError as err:
         logging.getLogger("info").info(f"AttributeError: {err}")
     except Exception as err:
-        print(err, 3)
+        logging.getLogger("info").info(f"Exception: {err}")
     finally:
         pass
