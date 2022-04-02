@@ -146,9 +146,10 @@ cython_debug/
 src
 playbook.yaml
 inventory.yaml
-logsettings.ini
+pre_stable
 venv37
 venv39
+venv36
 tasks.md
 tasks
 known_hosts
