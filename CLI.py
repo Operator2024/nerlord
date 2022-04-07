@@ -174,7 +174,7 @@ def pong(ipv4: Text) -> [int, float]:
     if resp.is_alive:
         return icmplib.ping(ipv4, 5).max_rtt
     else:
-        return 1
+        return -1
 
 
 def choose_ip(hosttype: Text, data: Text or List, rngip: Text = None) ->\
@@ -182,8 +182,8 @@ def choose_ip(hosttype: Text, data: Text or List, rngip: Text = None) ->\
     if hosttype in ["host", "host_multiple"]:
         if isinstance(data, str):
             result = pong(data)
-            if result == 1:
-                return ["IPv4 адрес не отвечает", 0, None]
+            if result == -1:
+                return ["IPv4 адрес не отвечает", result, None]
             else:
                 return [data, int(result), None]
         elif isinstance(data, list):
@@ -192,7 +192,7 @@ def choose_ip(hosttype: Text, data: Text or List, rngip: Text = None) ->\
             for addr in data:
                 if isinstance(addr, str):
                     result = pong(addr)
-                    if result != 1:
+                    if result != -1:
                         if best_rtt_max == 0:
                             best_rtt_max = result
                             ip = addr
@@ -231,8 +231,8 @@ def choose_ip(hosttype: Text, data: Text or List, rngip: Text = None) ->\
                         else:
                             nextaddr = None
                     else:
-                        if result == 1:
-                            return ["IPv4 адрес не отвечает", 0, None]
+                        if result == -1:
+                            return ["IPv4 адрес не отвечает", result, None]
                         break
                 else:
                     currentaddr = ".".join([str(elem) for elem in startRange])

@@ -1,4 +1,18 @@
 
+# Patch notes 0.1.7-beta.1 (04.07.2022)
+## Module [API]
+- Nothing
+
+## Module [CLI]
+- Fixed a bug to which command "ping" returned the wrong result with local addresses (IPv4 private ranges)
+
+## Module [main]
+- Code is optimized according to **[PEP8]**
+- Added '_var_for_worker' - a list of data items for parallel workers
+- Functions 'proc_creator' and '_worker' have been improved
+- Added new features that provide multi-core works in CLI mode
+
+
 # Patch notes 0.1.6 (04.02.2022)
 ## Module [API]
 - Code is optimized according to **[PEP8]**

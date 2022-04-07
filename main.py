@@ -1,4 +1,4 @@
-__version__ = "0.1.6"
+__version__ = "0.1.7-beta.1"
 
 __author__ = "Vladimir Belomestnykh aka Operator2024"
 
@@ -34,16 +34,38 @@ from CLI import *
 # from task import *
 # from API import *
 from loggers import *
+# for tests; remove after
+from time import sleep
 
 
 # debug
-def test(a):
-    pass
+def _worker(a, b, c, d):
+    # a: Dict - shared vocabulary between processes.
+    # b: Text - IPv4 addr
+    # c: BoundedSemaphore - block object
+    # d: Set - raw_auth_data
+    # d by index
+    # d[0] - protocol, d[1] - ssh key; it's dict, d[2] - username,
+    # d[3] - password, d[4] - ssh port
+    print(a, "TEST RUNNING")
+    a[b] = [type(b), 0, 0]
+    sleep(3)
+    print(a, "TEST STOPPED")
+    print(d)
+    c.release()
 
 
-def proc_creator(data: List, plist: List) -> List:
-    data[2] = re.sub("\s{1,}", "_", data[2])
-    plist.append(Process(target=data[0], args=(data[1],), name=data[2]))
+def proc_creator(_pconfig: List, plist: List) -> List:
+    # _pconfig by index
+    # 0 - func name: Dict, 1 - args for process: List,
+    # 2 - name for process: Text
+    # _pconfig[1] - _var_for_worker by index
+    # 0 - tasks_summary: Dict - shared vocabulary between processes.
+    #     saves the result.
+    # 1 - ip: Text, 2 - block: BoundedSemaphore, 3 - raw_auth_data: Set
+    _pconfig[2] = re.sub("\s{1,}", "_", _pconfig[2])
+    plist.append(Process(target=_pconfig[0], args=(*_pconfig[1],),
+                         name=_pconfig[2]))
     return plist
 
 
@@ -182,6 +204,8 @@ if __name__ == '__main__':
                     with Manager() as mgr:
                         block = mgr.BoundedSemaphore(2)
                         tasks_summary: Dict = mgr.dict()
+                        _var_for_worker: List = [tasks_summary, "_._._._",
+                                                 block, "_auth_data_tpml_"]
                         _patterns: List[Text] = ["IPv4 адрес не отвечает"]
                         _pList: List = []
                         for i in data:
@@ -194,11 +218,18 @@ if __name__ == '__main__':
                                                 choose_ip(hosttype=j,
                                                           data=data[i][j])
                                             print(ip, rtt, nextip, -2)
-                                            if rtt != 0 and rtt > 0:
+                                            if rtt != -1 and rtt >= 0:
+                                                _var_for_worker[1] = ip
+                                                _var_for_worker[3] = (
+                                                    data[i]['protocol'][0],
+                                                    data[i]['key'],
+                                                    data[i]['login'],
+                                                    data[i]['password'],
+                                                    data[i]['ssh_port']
+                                                )
                                                 _pList = proc_creator(
-                                                    [test, tasks_summary,
-                                                     f"{i}_{ip}"],
-                                                    _pList)
+                                                    [_worker, _var_for_worker,
+                                                     f"{i}_{ip}"], _pList)
                                             while True:
                                                 print(data[i][j], ip)
                                                 if ip != data[i][j][1] and \
@@ -211,27 +242,43 @@ if __name__ == '__main__':
                                                 else:
                                                     break
                                             print(ip, rtt, nextip, -1)
-                                            if rtt != 0 and rtt > 0:
+                                            if rtt != -1 and rtt >= 0:
+                                                _var_for_worker[1] = ip
+                                                _var_for_worker[3] = (
+                                                    data[i]['protocol'][0],
+                                                    data[i]['key'],
+                                                    data[i]['login'],
+                                                    data[i]['password'],
+                                                    data[i]['ssh_port']
+                                                )
                                                 _pList = proc_creator(
-                                                    [test, tasks_summary,
-                                                     f"{i}_{ip}"],
-                                                    _pList)
+                                                    [_worker, _var_for_worker,
+                                                     f"{i}_{ip}"], _pList)
                                         else:
                                             ip, rtt, _ = \
                                                 choose_ip(hosttype=j,
                                                           data=data[i][j])
                                             print(ip, rtt, 1)
-                                            if rtt != 0 and rtt > 0:
+                                            if rtt != -1 and rtt >= 0:
+                                                _var_for_worker[1] = ip
+                                                _var_for_worker[3] = (
+                                                    data[i]['protocol'][0],
+                                                    data[i]['key'],
+                                                    data[i]['login'],
+                                                    data[i]['password'],
+                                                    data[i]['ssh_port']
+                                                )
                                                 _pList = proc_creator(
-                                                    [test, tasks_summary,
-                                                     f"{i}_{ip}"],
-                                                    _pList)
+                                                    [_worker, _var_for_worker,
+                                                     f"{i}_{ip}"], _pList)
                                 else:
                                     for k in data[i][j]:
                                         for z in data[i][j][k]:
                                             # _algo_type is only three values
                                             # host, host_multiple and host_range
                                             _algo_type = data[i][j][k][z]
+                                            # _rhd - _raw_host_data
+                                            _rhd = data[i][j][k]
                                             if z in ["host", "host_multiple",
                                                      "host_range"]:
                                                 if z == "host_range":
@@ -239,10 +286,19 @@ if __name__ == '__main__':
                                                         hosttype=z,
                                                         data=_algo_type)
                                                     print(ip, rtt, nextip, 2)
-                                                    if rtt != 0 and rtt > 0:
+                                                    if rtt != -1 and rtt >= 0:
+                                                        _var_for_worker[1] = ip
+                                                        _var_for_worker[3] = (
+                                                            _rhd['protocol'][
+                                                                0],
+                                                            _rhd['key'],
+                                                            _rhd['login'],
+                                                            _rhd['password'],
+                                                            _rhd['ssh_port']
+                                                        )
                                                         _pList = proc_creator(
-                                                            [test,
-                                                             tasks_summary,
+                                                            [_worker,
+                                                             _var_for_worker,
                                                              f"{i}_{ip}"],
                                                             _pList)
                                                     while True:
@@ -261,10 +317,19 @@ if __name__ == '__main__':
                                                         else:
                                                             break
                                                     print(ip, rtt, nextip, 3)
-                                                    if rtt != 0 and rtt > 0:
+                                                    if rtt != -1 and rtt >= 0:
+                                                        _var_for_worker[1] = ip
+                                                        _var_for_worker[3] = (
+                                                            _rhd['protocol'][
+                                                                0],
+                                                            _rhd['key'],
+                                                            _rhd['login'],
+                                                            _rhd['password'],
+                                                            _rhd['ssh_port']
+                                                        )
                                                         _pList = proc_creator(
-                                                            [test,
-                                                             tasks_summary,
+                                                            [_worker,
+                                                             _var_for_worker,
                                                              f"{i}_{ip}"],
                                                             _pList)
                                                 else:
@@ -272,13 +337,28 @@ if __name__ == '__main__':
                                                         hosttype=z,
                                                         data=_algo_type)
                                                     print(ip, rtt, 4)
-                                                    if rtt != 0 and rtt > 0:
+                                                    if rtt != -1 and rtt >= 0:
+                                                        _var_for_worker[1] = ip
+                                                        _var_for_worker[3] = (
+                                                            _rhd['protocol'][
+                                                                0],
+                                                            _rhd['key'],
+                                                            _rhd['login'],
+                                                            _rhd['password'],
+                                                            _rhd['ssh_port']
+                                                        )
                                                         _pList = proc_creator(
-                                                            [test,
-                                                             tasks_summary,
+                                                            [_worker,
+                                                             _var_for_worker,
                                                              f"{i}_{ip}"],
                                                             _pList)
                         print(_pList)
+                        for _, p in enumerate(_pList):
+                            block.acquire()
+                            p.start()
+                        for idx, p in enumerate(_pList):
+                            if p.is_alive():
+                                p.join()
 
                 else:
                     msg: Text = msg_patterns[1] + miss_req_args
