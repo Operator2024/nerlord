@@ -1,3 +1,19 @@
+# Patch notes 0.2.8-beta.1 (04.15.2022)
+## Module [API]
+- Minor edits related to added new functional to 'loggers.py' module
+
+## Module [CLI]
+- Nothing
+
+## Module [main]
+- Code is optimized according to **[PEP8]**
+- Added new features that provide thread safety when using multi-thread loggers
+
+## Module [loggers]
+- Was changed the main logic of work
+- Added new features to enable more detailed logging
+- Added "CustomFilter", queue-based listener, and handler to allow inter-thread communication
+- Code is optimized according to **[PEP8]**
 
 # Patch notes 0.1.7-beta.1 (04.07.2022)
 ## Module [API]
@@ -29,3 +45,4 @@
 [API]: <https://github.com/Operator2024/nerlord/blob/master/API.py>
 [CLI]: <https://github.com/Operator2024/nerlord/blob/master/CLI.py>
 [main]: <https://github.com/Operator2024/nerlord/blob/master/main.py>
+[loggers]: <https://github.com/Operator2024/nerlord/blob/master/loggers.py>

@@ -1,10 +1,10 @@
-__version__ = "0.1.7-beta.1"
+__version__ = "0.2.8-beta.1"
 
 __author__ = "Vladimir Belomestnykh aka Operator2024"
 
 __license__ = "MIT"
 
-__copyright__ = "Copyright (c) 2021 Vladimir Belomestnykh for Metropolis Company LLC" \
+__copyright__ = "Copyright (c) 2021-22 Vladimir Belomestnykh for Metropolis Company LLC" \
                 " \n " \
                 "Permission is hereby granted, free of charge, to any person obtaining a copy" \
                 "of this software and associated documentation files (the \"Software\"), to deal" \
@@ -25,21 +25,30 @@ __copyright__ = "Copyright (c) 2021 Vladimir Belomestnykh for Metropolis Company
                 "SOFTWARE."
 
 import argparse
-from multiprocessing import Manager, Process
+import os
+import re
+from multiprocessing import Manager, Process, Queue
 from sys import version_info
+# for tests; remove after
+from time import sleep
+from typing import Text, List, Dict
 
-from API import *
-from CLI import *
+from yaml import safe_load
+
+from API import redirect, do_GET, do_POST, web, asyncio
+from CLI import verify, choose_ip
+from loggers import listener_setup, queue_handler_setup, \
+    load_config, logger_generator
+
+
 # from node import *
 # from task import *
 # from API import *
-from loggers import *
-# for tests; remove after
-from time import sleep
+
 
 
 # debug
-def _worker(a, b, c, d):
+def _worker(a, b, c, d, e):
     # a: Dict - shared vocabulary between processes.
     # b: Text - IPv4 addr
     # c: BoundedSemaphore - block object
@@ -47,11 +56,13 @@ def _worker(a, b, c, d):
     # d by index
     # d[0] - protocol, d[1] - ssh key; it's dict, d[2] - username,
     # d[3] - password, d[4] - ssh port
+    # e - queue logger object
+
+    # test worker functionality
     print(a, "TEST RUNNING")
     a[b] = [type(b), 0, 0]
     sleep(3)
-    print(a, "TEST STOPPED")
-    print(d)
+    print(a, "TEST STOPPED", d)
     c.release()
 
 
@@ -98,6 +109,18 @@ if __name__ == '__main__':
                                 f'{__author__}, version: {__version__} ',
                         action='version')
     args = parser.parse_args()
+    # logger setup block
+    if args.mode[0] == "CLI":
+        queue = Queue(-1)
+        listener = Process(target=listener_setup, args=(queue,))
+        listener.start()
+        root = queue_handler_setup(queue)
+    else:
+        load_config()
+        # _loggers - ['critical','error', 'warning', 'info', 'debug', 'root']
+        #                 0        1          2        3        4       5
+        _loggers = logger_generator()
+        root = _loggers[3]
 
     try:
         py_version = f"{version_info[0]}.{version_info[1]}.{version_info[2]}"
@@ -109,7 +132,7 @@ if __name__ == '__main__':
             "Конфигурационный файл не был найден по указанному пути ",
             f"Режим {args.mode[0]} не поддерживает указанные аргументы ", 2
             ]
-        root = nlog("MainWorker")
+
         if re.search("^3\.([789]([0-9]|)|[0-9][0-9])\.\d{1,2}$", py_version):
             invalid_args = ""
             miss_req_args = ""
@@ -131,7 +154,7 @@ if __name__ == '__main__':
                         invalid_args += f", {args.format[0]}"
                 if len(invalid_args) != 0:
                     msg = msg_patterns[4] + invalid_args
-                    logging.getLogger("info").info(msg)
+                    root.info(msg)
                     raise argparse.ArgumentError(None, msg)
                 else:
                     if "3.7" in py_version:
@@ -143,7 +166,7 @@ if __name__ == '__main__':
                     app.add_routes([web.get("/post", do_POST)])
                     app.add_routes([web.post("/post", do_POST)])
                     web.run_app(host="127.0.0.1", port=8888, app=app,
-                                access_log=logging.getLogger("info"),
+                                access_log=root,
                                 access_log_format='%a %t "%{SecureRequest}o" %s'
                                                   ' %b "%{Referer}i" "%{'
                                                   'User-Agent}i"')
@@ -164,37 +187,33 @@ if __name__ == '__main__':
                         if len(invalid_args) == 0:
                             invalid_args += f"{args.format[0]}"
                         msg = msg_patterns[4] + invalid_args
-                        logging.getLogger("info").info(msg)
+                        root.info(msg)
                         raise argparse.ArgumentError(None, msg)
                     else:
                         if os.path.exists(args.playbook[0]):
                             resp = verify(filepath=args.playbook[0],
                                           filename="playbook.yaml")
                             if resp == "playbook.yaml is Ok":
-                                logging.getLogger("info").info(
-                                    f"Verify: {resp}")
+                                root.info(f"Verify: {resp}")
                             else:
-                                logging.getLogger("info").info(
-                                    f"Verify: {resp}")
+                                root.info(f"Verify: {resp}")
                                 raise Exception(resp)
                         else:
                             msg: Text = msg_patterns[3] + args.playbook[0]
-                            logging.getLogger("info").info(msg)
+                            root.info(msg)
                             raise FileNotFoundError(msg)
 
                         if os.path.exists(args.inventory[0]):
                             resp = verify(filepath=args.inventory[0],
                                           filename="inventory.yaml")
                             if resp == "inventory.yaml is Ok":
-                                logging.getLogger("info").info(
-                                    f"Verify: {resp}")
+                                root.info(f"Verify: {resp}")
                             else:
-                                logging.getLogger("info").info(
-                                    f"Verify: {resp}")
+                                root.info(f"Verify: {resp}")
                                 raise Exception(resp)
                         else:
                             msg: Text = msg_patterns[2] + args.inventory[0]
-                            logging.getLogger("info").info(msg)
+                            root.info(msg)
                             raise FileNotFoundError(msg)
 
                     with open(args.inventory[0], "r", encoding="utf8") as file:
@@ -205,7 +224,8 @@ if __name__ == '__main__':
                         block = mgr.BoundedSemaphore(2)
                         tasks_summary: Dict = mgr.dict()
                         _var_for_worker: List = [tasks_summary, "_._._._",
-                                                 block, "_auth_data_tpml_"]
+                                                 block, "_auth_data_tpml_",
+                                                 queue]
                         _patterns: List[Text] = ["IPv4 адрес не отвечает"]
                         _pList: List = []
                         for i in data:
@@ -362,7 +382,7 @@ if __name__ == '__main__':
 
                 else:
                     msg: Text = msg_patterns[1] + miss_req_args
-                    logging.getLogger("info").info(msg)
+                    root.info(msg)
                     raise argparse.ArgumentError(None, msg)
 
             elif args.mode[0] == "PINFO":
@@ -388,37 +408,38 @@ if __name__ == '__main__':
                         print("Mode is developed state now")
                     else:
                         msg: Text = msg_patterns[3] + args.playbook[0]
-                        logging.getLogger("info").info(msg)
+                        root.info(msg)
                         raise FileNotFoundError(msg)
 
                     if os.path.exists(args.inventory[0]):
                         pass
                     else:
                         msg: Text = msg_patterns[2] + args.inventory[0]
-                        logging.getLogger("info").info(msg)
+                        root.info(msg)
                         raise FileNotFoundError(msg)
 
                 else:
                     msg: Text = msg_patterns[1] + miss_req_args
-                    logging.getLogger("info").info(msg)
+                    root.info(msg)
                     raise argparse.ArgumentError(None, msg)
 
             elif args.mode[0] == "IPsec":
                 print("Mode is developed state now")
         else:
-            logging.getLogger("info").info(msg_patterns[0])
+            root.info(msg_patterns[0])
 
     except FileNotFoundError as err:
-        logging.getLogger("info").info(f"FileNotFoundError: {err}")
+        root.info(f"FileNotFoundError: {err}")
     except argparse.ArgumentError as err:
-        logging.getLogger("info").info(f"ArgumentError: {err}")
+        root.info(f"ArgumentError: {err}")
     except web.HTTPRedirection as err:
         print(err, 1)
     except web.HTTPFound as err:
         print(err, 2)
     except AttributeError as err:
-        logging.getLogger("info").info(f"AttributeError: {err}")
+        root.info(f"AttributeError: {err}")
     except Exception as err:
-        logging.getLogger("info").info(f"Exception: {err}")
+        root.info(f"Exception: {err}")
     finally:
-        pass
+        if args.mode[0] == "CLI":
+            queue.put_nowait(None)

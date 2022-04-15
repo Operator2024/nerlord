@@ -1,23 +1,41 @@
 ---
 version: 1
 disable_existing_loggers: True
+filters:
+  filter:
+    () : loggers.CustomFilter
+    param:
+      {
+        'NOTSET': 0, 'DEBUG': 10, 'INFO': 20,
+        'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50
+      }
+
 loggers:
+  critical:
+    level: CRITICAL
+    handlers: [file, console]
+    propagate: False
+    filters: [filter]
   error:
     level: ERROR
-    handlers: [file]
+    handlers: [file, console]
     propagate: False
-  root:
+    filters: [filter]
+  warning:
     level: WARNING
-    handlers: [file]
+    handlers: [file, console]
     propagate: False
+    filters: [filter]
   info:
     level: INFO
     handlers: [file, console]
     propagate: False
+    filters: [filter]
   debug:
     level: DEBUG
     handlers: [file_debug]
     propagate: False
+    filters: [filter]
 handlers:
   file:
     class: logging.handlers.RotatingFileHandler
@@ -31,7 +49,7 @@ handlers:
     delay: False
   console:
     class: logging.StreamHandler
-    level: INFO
+    level: NOTSET
     formatter: standard
     stream: ext://sys.stdout
   file_debug:
@@ -56,4 +74,8 @@ formatters:
     datefmt: '%d-%m-%Y %I:%M:%S %p'
     style: '%'
     class: logging.Formatter
+root:
+  level: NOTSET
+  handlers: [file, console]
+  filters: [filter]
 ...
