@@ -1,5 +1,6 @@
 import hashlib
 import json
+import logging
 import os
 import re
 from typing import (NoReturn, Text, Union,
@@ -245,18 +246,26 @@ def choose_ip(hosttype: Text, data: Text or List, rngip: Text = None) ->\
                     return [currentaddr, int(result), nextaddr]
 
 
-def ssh(ipv4: Text, login: Text, pasw: Text, path: Text, key: bool = False, cmd: Text = "") -> \
-        bytes:
+def ssh(ipv4: Text, login: Text, *, passw: Text = None, port: Text = "22",
+        key: bool = False, path: Text = None, secret: Text = None,
+        cmd: Text = "") -> bytes:
+    _port = "22" if port == "" else port
+
     with paramiko.SSHClient() as session:
+        logging.getLogger('paramiko').disabled = True
+        logging.getLogger('paramiko.hotkeys').disabled = True
+        logging.getLogger('paramiko.transport').disabled = True
         if os.path.exists("known_hosts"):
             session.load_host_keys("known_hosts")
         session.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         session.save_host_keys("known_hosts")
         if key is True:
-            session.connect(hostname=ipv4, username=login, key_filename=path, passphrase=pasw)
+            session.connect(hostname=ipv4, username=login, key_filename=path,
+                            passphrase=secret, port=_port)
         else:
-            session.connect(hostname=ipv4, username=login, password=pasw)
-        stdin, stdout, stderr = session.exec_command(cmd)
+            session.connect(hostname=ipv4, username=login, password=passw,
+                            port=_port)
+        _, stdout, stderr = session.exec_command(cmd)
         return stdout.read() + stderr.read()
 
 
@@ -408,3 +417,10 @@ def cvs(ipv4: Text, tasks: Dict, taskn: Set = None) -> List:
         os.mkdir("tasks")
         os.mkdir(f"tasks/{ipv4}")
         return []
+
+def check_path(_rpath: Text) -> bool:
+    if os.path.exists(_rpath):
+        return True
+    else:
+        os.mkdir(_rpath)
+        return True

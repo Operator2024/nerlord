@@ -52,15 +52,15 @@ class CustomFilter(logging.Filter):
         _allow = False
         if self.param is None:
             _allow = True
-        elif record.name is 'root':
+        elif record.name == 'root':
             for lvl in self.param.keys():
                 if record.levelno == self.param[lvl]:
                     _allow = True
         else:
             if self.param[record.name.upper()] == record.levelno:
                 _allow = True
-        if _allow:
-            record.msg = 'changed: ' + record.msg
+        # if _allow:
+            # record.msg = 'changed: ' + record.msg
         return _allow
 
 
@@ -77,8 +77,11 @@ def queue_listener(q: Queue):
     while True:
         while not q.empty():
             record = q.get()
-            if record is not None:
+            if record is not None and record.name != "root":
                 logger: Logger = logging.getLogger(record.name)
+                logger.handle(record)
+            elif record is not None and record.name == "root":
+                logger: Logger = logging.getLogger()
                 logger.handle(record)
             else:
                 sys.exit(0)
@@ -106,8 +109,8 @@ def load_config():
 
 
 def logger_generator() -> List[Logger]:
-    _logger_names = ['critical','error', 'warning',
-                     'info', 'debug']
+    _logger_names = ['critical', 'error', 'warning', 'info',
+                     'info_w', 'info_h', 'debug']
     for x in _logger_names:
         if logging.root.manager.loggerDict.get(x):
             pass

@@ -1,4 +1,4 @@
-__version__ = "0.2.8-beta.1"
+__version__ = "0.2.9-beta.1"
 
 __author__ = "Vladimir Belomestnykh aka Operator2024"
 
@@ -25,9 +25,11 @@ __copyright__ = "Copyright (c) 2021-22 Vladimir Belomestnykh for Metropolis Comp
                 "SOFTWARE."
 
 import argparse
+import logging
 import os
 import re
-from multiprocessing import Manager, Process, Queue
+from multiprocessing import Manager, Process, Queue, current_process
+from random import randint
 from sys import version_info
 # for tests; remove after
 from time import sleep
@@ -35,35 +37,71 @@ from typing import Text, List, Dict
 
 from yaml import safe_load
 
-from API import redirect, do_GET, do_POST, web, asyncio
-from CLI import verify, choose_ip
 from loggers import listener_setup, queue_handler_setup, \
     load_config, logger_generator
 
 
-# from node import *
-# from task import *
-# from API import *
-
-
-
-# debug
 def _worker(a, b, c, d, e):
-    # a: Dict - shared vocabulary between processes.
-    # b: Text - IPv4 addr
-    # c: BoundedSemaphore - block object
-    # d: Set - raw_auth_data
-    # d by index
-    # d[0] - protocol, d[1] - ssh key; it's dict, d[2] - username,
-    # d[3] - password, d[4] - ssh port
-    # e - queue logger object
+    """
+    :param a: Dict - shared vocabulary between processes.
+              a['key'] = [ok_status, changed_status,
+                          error_status, total_steps]
+    :param b: Text - IPv4 addr
+    :param c: BoundedSemaphore - block object
+    :param d: Set - raw_auth_data
+              d[0] - protocol, d[1] - ssh key; it's dict, d[2] - username,
+              d[3] - password, d[4] - ssh port
+    :param e: queue logger object
+    :return: None
+    """
+    from CLI import ssh, check_path
+    # get logger object
+    _ = queue_handler_setup(e)
+    _iLog = logging.getLogger('info_w')
+    _eLog = logging.getLogger('error')
 
-    # test worker functionality
-    print(a, "TEST RUNNING")
-    a[b] = [type(b), 0, 0]
-    sleep(3)
-    print(a, "TEST STOPPED", d)
-    c.release()
+    _worker_name = current_process().name
+    _list_summary = [0, 0, 0, 0]
+    a[_worker_name] = _list_summary
+    _all_revision = []
+    # добавить pid, ppid и имя в сообщения из воркеров
+    try:
+        # load tasks and calculate steps
+        with open("playbook.yaml", "r", encoding="utf8") as plb:
+            _tasks = safe_load(plb)
+
+        total_steps = 0
+        for task in _tasks:
+            if "steps" in _tasks[task]:
+                for step in _tasks[task]["steps"]:
+                    if _tasks[task]["steps"][step].get("name"):
+                        total_steps += 1
+            else:
+                if _tasks[task]['step'].get("name"):
+                    total_steps += 1
+        _list_summary[3] = total_steps
+        a[_worker_name] = _list_summary
+
+        # check history folder path
+        if check_path("db"):
+            if check_path(f"db/{_worker_name}"):
+                _all_revision = os.listdir(f"db/{_worker_name}")
+                print(_all_revision)
+
+        result = ssh(ipv4=b, login=d[2], passw=d[3], port=d[4], cmd="?")
+        print(result)
+        sleep(randint(1, 4))
+        _iLog.info(f'Worker - {current_process().name}')
+        _list_summary[0] = _list_summary[3] - _list_summary[1] - \
+                           _list_summary[2]
+        a[_worker_name] = _list_summary
+    except OSError as err:
+        _list_summary[2] = _list_summary[3] - \
+                           _list_summary[0] + _list_summary[1]
+        a[_worker_name] = _list_summary
+        _eLog.error(err)
+    finally:
+        c.release()
 
 
 def proc_creator(_pconfig: List, plist: List) -> List:
@@ -111,16 +149,24 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # logger setup block
     if args.mode[0] == "CLI":
+        from CLI import verify, choose_ip
+
         queue = Queue(-1)
         listener = Process(target=listener_setup, args=(queue,))
         listener.start()
         root = queue_handler_setup(queue)
-    else:
+    elif args.mode[0] == "API":
+        from API import redirect, do_GET, do_POST, web, asyncio
+
         load_config()
-        # _loggers - ['critical','error', 'warning', 'info', 'debug', 'root']
-        #                 0        1          2        3        4       5
+        # _loggers - ['critical', 'error', 'warning', 'info',
+        #                 0        1          2        3
+        #              'info_w', 'info_h', 'debug', 'root']
+        #                 4        5         6        7
         _loggers = logger_generator()
         root = _loggers[3]
+    else:
+        root = logging.getLogger()
 
     try:
         py_version = f"{version_info[0]}.{version_info[1]}.{version_info[2]}"
@@ -131,7 +177,7 @@ if __name__ == '__main__':
             "Инвентаризационный файл не был найден по указанному пути ",
             "Конфигурационный файл не был найден по указанному пути ",
             f"Режим {args.mode[0]} не поддерживает указанные аргументы ", 2
-            ]
+        ]
 
         if re.search("^3\.([789]([0-9]|)|[0-9][0-9])\.\d{1,2}$", py_version):
             invalid_args = ""
@@ -372,13 +418,36 @@ if __name__ == '__main__':
                                                              _var_for_worker,
                                                              f"{i}_{ip}"],
                                                             _pList)
-                        print(_pList)
+                        print("=" * 15)
+                        root_h = logging.getLogger('info_h')
                         for _, p in enumerate(_pList):
                             block.acquire()
                             p.start()
                         for idx, p in enumerate(_pList):
                             if p.is_alive():
                                 p.join()
+
+                        _ok_status = _changed_status = _error_status = 0
+                        _total = 0
+
+                        for _k, v in _var_for_worker[0].items():
+                            _ok_status += v[0]
+                            _changed_status += v[1]
+                            _error_status += v[2]
+                            _total += 1
+                        sleep(1)
+                        msg = "[Work report] "
+                        ll = os.get_terminal_size().columns
+                        ll -= len(msg) + 6
+                        msg += int(ll) * "*"
+                        root_h.info(msg)
+                        _total1 = _ok_status + _changed_status + _error_status
+                        msg2 = f"ok: {_ok_status}, changed: {_changed_status}," \
+                               f" error: {_error_status} out of {_total1}" \
+                               f" in {_total} processes"
+                        root.info(msg2)
+
+
 
                 else:
                     msg: Text = msg_patterns[1] + miss_req_args
