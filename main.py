@@ -1,4 +1,4 @@
-__version__ = "0.2.9-beta.1"
+__version__ = "0.2.9-beta.2"
 
 __author__ = "Vladimir Belomestnykh aka Operator2024"
 
@@ -50,11 +50,20 @@ def _worker(a, b, c, d, e):
     :param c: BoundedSemaphore - block object
     :param d: Set - raw_auth_data
               d[0] - protocol, d[1] - ssh key; it's dict, d[2] - username,
-              d[3] - password, d[4] - ssh port
+              d[3] - password, d[4] - ssh port, d[5] - vendor
     :param e: queue logger object
     :return: None
     """
-    from CLI import ssh, check_path
+    import sys
+    import json
+    from datetime import datetime
+
+    from CLI import check_path, get_step, get_hash, get_device_config
+
+    if sys.version_info >= (3, 9):
+        from zoneinfo import ZoneInfo
+    else:
+        from pytz import timezone
     # get logger object
     _ = queue_handler_setup(e)
     _iLog = logging.getLogger('info_w')
@@ -63,8 +72,15 @@ def _worker(a, b, c, d, e):
     _worker_name = current_process().name
     _list_summary = [0, 0, 0, 0]
     a[_worker_name] = _list_summary
-    _all_revision = []
+    _all_revision = list()
+    _step_names = set()
+    _rev_content = {'origin': '', 'diff': '', 'result': '',
+                    'command': '', 'revision': '', 'date_utc': ''}
+    _root_path_db = "db"
     # добавить pid, ppid и имя в сообщения из воркеров
+    if d[0] != "ssh" and d[0] != "SSH":
+        sys.exit(1)
+
     try:
         # load tasks and calculate steps
         with open("playbook.yaml", "r", encoding="utf8") as plb:
@@ -82,19 +98,94 @@ def _worker(a, b, c, d, e):
         _list_summary[3] = total_steps
         a[_worker_name] = _list_summary
 
-        # check history folder path
-        if check_path("db"):
-            if check_path(f"db/{_worker_name}"):
-                _all_revision = os.listdir(f"db/{_worker_name}")
-                print(_all_revision)
+        # result = ssh(ipv4=b, login=d[2], passw=d[3], port=d[4],
+        #              cmd="export compact")
+        for task_name in _tasks.keys():
+            while True:
+                _virgin_rev = False
+                # check history folder path
+                if check_path(_root_path_db):
+                    if check_path(f"{_root_path_db}/{_worker_name}"):
+                        _all_revision = os.listdir(
+                            f"{_root_path_db}/{_worker_name}")
 
-        result = ssh(ipv4=b, login=d[2], passw=d[3], port=d[4], cmd="?")
-        print(result)
+                if d[5] == "Mikrotik":
+                    _rev_content['origin'] = get_hash(
+                        re.sub("#.+\r", "", get_device_config(
+                            (b, d[2], d[3], d[4]), d[5]).decode()))
+                elif d[5] == "SNR" or d[5] == "Cisco" or d[5] == "cisco":
+                    sys.exit(1)
+
+                r = get_step(_tasks, task_name, _step_names)
+                if isinstance(r, list):
+                    _step_names = r[1]
+                    if len(_all_revision) == 0:
+                        _virgin_rev = True
+                else:
+                    _step_names.clear()
+                    break
+
+                if _virgin_rev:
+                    _rev_content['revision'] = 1
+                    _rev_content['diff'] = get_hash(r[0]["command"])
+                else:
+                    _rev = 0
+                    _prev_rev_name = ""
+                    for _item in _all_revision:
+                        if _rev < int(_item.split("_")[0]):
+                            _rev = int(_item.split("_")[0])
+                            _prev_rev_name = _item
+
+                    if len(_prev_rev_name) == 0:
+                        sys.exit(1)
+                    else:
+                        with open(f"{_root_path_db}/{_worker_name}/"
+                                  f"{_prev_rev_name}", "r") as _db:
+                            _prev_rev = json.load(_db)
+                    if int(_prev_rev['revision']) == _rev:
+                        _rev_content['revision'] = _rev + 1
+                    else:
+                        sys.exit(1)
+
+                    _rev_content['diff'] = get_hash(r[0]["command"])
+                    if _rev_content['diff'] != _prev_rev['diff']:
+                        pass
+                    else:
+                        _iLog.info("diff is equal to previous")
+                        _list_summary[0] = 1
+                        a[_worker_name] = _list_summary
+                        # sys.exit(1)
+
+                _rev_content['command'] = r[0]['command']
+                if d[5] == "Mikrotik":
+                    _rev_content['result'] = get_hash(
+                        re.sub("#.+\r", "",
+                               get_device_config((b, d[2], d[3], d[4]),
+                                                 "Mikrotik").decode()))
+                else:
+                    sys.exit(1)
+                _rev_name = f"{_rev_content['revision']}_" \
+                            f"{_rev_content['result'][0:16:2]}_" \
+                            f"{_rev_content['result'][16::2]}"
+                if sys.version_info >= (3, 9):
+                    _rev_content['date_utc'] = \
+                        datetime.now(ZoneInfo('Asia/Yekaterinburg')
+                                     ).strftime('%Y-%m-%d %H:%M:%S%z')
+                else:
+                    _rev_content['date_utc'] = \
+                        datetime.now(timezone('Asia/Yekaterinburg')
+                                     ).strftime('%Y-%m-%d %H:%M:%S%z')
+
+                with open(f"{_root_path_db}/{_worker_name}/{_rev_name}", "w",
+                          encoding="utf8") as rev_file:
+                    json.dump(fp=rev_file, obj=_rev_content)
+                # saves the result
+                _list_summary[1] = _list_summary[3] - \
+                                   _list_summary[0] - _list_summary[2]
+                a[_worker_name] = _list_summary
+
         sleep(randint(1, 4))
         _iLog.info(f'Worker - {current_process().name}')
-        _list_summary[0] = _list_summary[3] - _list_summary[1] - \
-                           _list_summary[2]
-        a[_worker_name] = _list_summary
     except OSError as err:
         _list_summary[2] = _list_summary[3] - \
                            _list_summary[0] + _list_summary[1]
@@ -281,7 +372,7 @@ if __name__ == '__main__':
                                              "host_multiple", "host_range"]:
                                         if j == "host_range":
                                             ip, rtt, nextip = \
-                                                choose_ip(hosttype=j,
+                                                choose_ip(host_type=j,
                                                           data=data[i][j])
                                             print(ip, rtt, nextip, -2)
                                             if rtt != -1 and rtt >= 0:
@@ -291,7 +382,8 @@ if __name__ == '__main__':
                                                     data[i]['key'],
                                                     data[i]['login'],
                                                     data[i]['password'],
-                                                    data[i]['ssh_port']
+                                                    data[i]['ssh_port'],
+                                                    data[i]['vendor']
                                                 )
                                                 _pList = proc_creator(
                                                     [_worker, _var_for_worker,
@@ -301,10 +393,10 @@ if __name__ == '__main__':
                                                 if ip != data[i][j][1] and \
                                                         ip != _patterns[0]:
                                                     ip, rtt, nextip = \
-                                                        choose_ip(hosttype=j,
+                                                        choose_ip(host_type=j,
                                                                   data=data[i][
                                                                       j],
-                                                                  rngip=nextip)
+                                                                  range_ip=nextip)
                                                 else:
                                                     break
                                             print(ip, rtt, nextip, -1)
@@ -315,14 +407,15 @@ if __name__ == '__main__':
                                                     data[i]['key'],
                                                     data[i]['login'],
                                                     data[i]['password'],
-                                                    data[i]['ssh_port']
+                                                    data[i]['ssh_port'],
+                                                    data[i]['vendor']
                                                 )
                                                 _pList = proc_creator(
                                                     [_worker, _var_for_worker,
                                                      f"{i}_{ip}"], _pList)
                                         else:
                                             ip, rtt, _ = \
-                                                choose_ip(hosttype=j,
+                                                choose_ip(host_type=j,
                                                           data=data[i][j])
                                             print(ip, rtt, 1)
                                             if rtt != -1 and rtt >= 0:
@@ -332,7 +425,8 @@ if __name__ == '__main__':
                                                     data[i]['key'],
                                                     data[i]['login'],
                                                     data[i]['password'],
-                                                    data[i]['ssh_port']
+                                                    data[i]['ssh_port'],
+                                                    data[i]['vendor']
                                                 )
                                                 _pList = proc_creator(
                                                     [_worker, _var_for_worker,
@@ -349,7 +443,7 @@ if __name__ == '__main__':
                                                      "host_range"]:
                                                 if z == "host_range":
                                                     ip, rtt, nextip = choose_ip(
-                                                        hosttype=z,
+                                                        host_type=z,
                                                         data=_algo_type)
                                                     print(ip, rtt, nextip, 2)
                                                     if rtt != -1 and rtt >= 0:
@@ -360,7 +454,8 @@ if __name__ == '__main__':
                                                             _rhd['key'],
                                                             _rhd['login'],
                                                             _rhd['password'],
-                                                            _rhd['ssh_port']
+                                                            _rhd['ssh_port'],
+                                                            _rhd['vendor']
                                                         )
                                                         _pList = proc_creator(
                                                             [_worker,
@@ -375,11 +470,9 @@ if __name__ == '__main__':
                                                                 _patterns[0]:
                                                             ip, rtt, nextip = \
                                                                 choose_ip(
-                                                                    hosttype=z,
-                                                                    data=
-                                                                    _algo_type,
-                                                                    rngip=nextip
-                                                                )
+                                                                    host_type=z,
+                                                                    data=_algo_type,
+                                                                    range_ip=nextip)
                                                         else:
                                                             break
                                                     print(ip, rtt, nextip, 3)
@@ -391,7 +484,8 @@ if __name__ == '__main__':
                                                             _rhd['key'],
                                                             _rhd['login'],
                                                             _rhd['password'],
-                                                            _rhd['ssh_port']
+                                                            _rhd['ssh_port'],
+                                                            _rhd['vendor']
                                                         )
                                                         _pList = proc_creator(
                                                             [_worker,
@@ -400,7 +494,7 @@ if __name__ == '__main__':
                                                             _pList)
                                                 else:
                                                     ip, rtt, _ = choose_ip(
-                                                        hosttype=z,
+                                                        host_type=z,
                                                         data=_algo_type)
                                                     print(ip, rtt, 4)
                                                     if rtt != -1 and rtt >= 0:
@@ -411,7 +505,8 @@ if __name__ == '__main__':
                                                             _rhd['key'],
                                                             _rhd['login'],
                                                             _rhd['password'],
-                                                            _rhd['ssh_port']
+                                                            _rhd['ssh_port'],
+                                                            _rhd['vendor']
                                                         )
                                                         _pList = proc_creator(
                                                             [_worker,
@@ -442,7 +537,7 @@ if __name__ == '__main__':
                         msg += int(ll) * "*"
                         root_h.info(msg)
                         _total1 = _ok_status + _changed_status + _error_status
-                        msg2 = f"ok: {_ok_status}, changed: {_changed_status}," \
+                        msg2 = f"ok: {_ok_status}, changed: {_changed_status},"\
                                f" error: {_error_status} out of {_total1}" \
                                f" in {_total} processes"
                         root.info(msg2)

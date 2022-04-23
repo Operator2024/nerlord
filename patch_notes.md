@@ -1,3 +1,19 @@
+# Patch notes 0.2.9-beta.2 (04.23.2022)
+## Module [API]
+- Nothing
+
+## Module [CLI]
+- Removed deprecated functions
+- Added new functions "get_device_config", "get_hash", "get_step", "check_path"
+- Code is optimized according to **[PEP8]**
+
+## Module [main]
+- Code is optimized according to **[PEP8]**
+- Added main functional in "CLI" mode to control the version configuration of network devices. Only Mikrotik, SNR, Cisco.
+
+## Module [loggers]
+- Nothing
+
 # Patch notes 0.2.8-beta.1 (04.15.2022)
 ## Module [API]
 - Minor edits related to added new functional to 'loggers.py' module
