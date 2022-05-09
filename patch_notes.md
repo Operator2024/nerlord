@@ -1,3 +1,23 @@
+# Patch notes 0.3.9 (05.09.2022)
+## Module [API]
+- Finalized logging system
+- Added new conditions to detect required arguments
+- Code is optimized according to **[PEP8]**
+
+## Module [CLI]
+- Finalized logging system
+- Added new functions "get_header",
+- Code is optimized according to **[PEP8]**
+
+## Module [main]
+- Code is optimized according to **[PEP8]**
+- Finalized logging system
+- Finalized function "_worker" for CLI mode
+
+## Module [loggers]
+- Added color output in the console
+- Finalized logging system
+
 # Patch notes 0.2.9-beta.2 (04.23.2022)
 ## Module [API]
 - Nothing

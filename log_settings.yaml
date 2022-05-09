@@ -6,10 +6,9 @@ filters:
     () : loggers.CustomFilter
     param:
       {
-        'NOTSET': 0, 'DEBUG': 10, 'INFO': 20, 'INFO_W': 20, 'INFO_H': 20,
-        'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50
+        'NOTSET': 0, 'DEBUG': 10, 'INFO_B_CON': 20, 'INFO_H_CON': 20,
+        "INFO_FILE": 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50
       }
-
 loggers:
   critical:
     level: CRITICAL
@@ -18,27 +17,27 @@ loggers:
     filters: [filter]
   error:
     level: ERROR
-    handlers: [file, console]
+    handlers: [error_b_console, file]
     propagate: False
     filters: [filter]
   warning:
     level: WARNING
-    handlers: [file, console]
+    handlers: [warning_b_console, file]
     propagate: False
     filters: [filter]
-  info:
+  info_b_con:
     level: INFO
-    handlers: [file, console]
+    handlers: [info_b_console]
     propagate: False
     filters: [filter]
-  info_h:
+  info_h_con:
     level: INFO
-    handlers: [console_h]
+    handlers: [info_h_console]
     propagate: False
     filters: [filter]
-  info_w:
+  info_file:
     level: INFO
-    handlers: [console_w]
+    handlers: [file]
     propagate: False
     filters: [filter]
   debug:
@@ -62,15 +61,25 @@ handlers:
     level: NOTSET
     formatter: standard
     stream: ext://sys.stdout
-  console_h:
+  info_h_console:
     class: logging.StreamHandler
     level: NOTSET
-    formatter: standard_h
+    formatter: con_head_default
     stream: ext://sys.stdout
-  console_w:
+  info_b_console:
     class: logging.StreamHandler
     level: NOTSET
-    formatter: standard_w
+    formatter: con_body_default_info
+    stream: ext://sys.stdout
+  warning_b_console:
+    class: logging.StreamHandler
+    level: NOTSET
+    formatter: con_body_default_warning
+    stream: ext://sys.stdout
+  error_b_console:
+    class: logging.StreamHandler
+    level: NOTSET
+    formatter: con_body_default_error
     stream: ext://sys.stdout
   file_debug:
     class: logging.handlers.RotatingFileHandler
@@ -83,18 +92,28 @@ handlers:
     encoding: utf8
     delay: False
 formatters:
-  standard:
+  con_head_default:
+    format: '*********************** %(levelname)s: %(message)s'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+    class: logging.Formatter
+  con_body_default_info:
+    (): loggers.CustomFormatter
     format: '%(asctime)s, %(levelname)s: %(message)s'
     datefmt: '%d-%m-%Y %I:%M:%S %p'
     style: '%'
-    class: logging.Formatter
-  standard_h:
-    format: '%(levelname)s: %(message)s'
+  con_body_default_warning:
+    (): loggers.CustomFormatter
+    format: '%(asctime)s, %(levelname)s: %(message)s'
     datefmt: '%d-%m-%Y %I:%M:%S %p'
     style: '%'
-    class: logging.Formatter
-  standard_w:
+  con_body_default_error:
+    (): loggers.CustomFormatter
     format: '%(asctime)s, %(levelname)s, %(processName)s: %(message)s'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+  standard:
+    format: '%(asctime)s, %(levelname)s: %(message)s'
     datefmt: '%d-%m-%Y %I:%M:%S %p'
     style: '%'
     class: logging.Formatter

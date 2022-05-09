@@ -1,4 +1,4 @@
-__version__ = "0.2.9-beta.2"
+__version__ = "0.3.9"
 
 __author__ = "Vladimir Belomestnykh aka Operator2024"
 
@@ -28,8 +28,9 @@ import argparse
 import logging
 import os
 import re
-from multiprocessing import Manager, Process, Queue, current_process
-from random import randint
+import sys
+from multiprocessing import Manager, Process, Queue, current_process, \
+    set_start_method
 from sys import version_info
 # for tests; remove after
 from time import sleep
@@ -38,7 +39,13 @@ from typing import Text, List, Dict
 from yaml import safe_load
 
 from loggers import listener_setup, queue_handler_setup, \
-    load_config, logger_generator
+    load_config, logger_generator, COLORS
+
+if sys.platform != "win32":
+    import cryptography.utils
+    import warnings
+    warnings.simplefilter("ignore",
+                          cryptography.utils.CryptographyDeprecationWarning)
 
 
 def _worker(a, b, c, d, e):
@@ -58,7 +65,7 @@ def _worker(a, b, c, d, e):
     import json
     from datetime import datetime
 
-    from CLI import check_path, get_step, get_hash, get_device_config
+    from CLI import check_path, get_step, get_hash, get_device_config, ssh
 
     if sys.version_info >= (3, 9):
         from zoneinfo import ZoneInfo
@@ -66,8 +73,12 @@ def _worker(a, b, c, d, e):
         from pytz import timezone
     # get logger object
     _ = queue_handler_setup(e)
-    _iLog = logging.getLogger('info_w')
+
+    _iLog = logging.getLogger('info_b_con')
     _eLog = logging.getLogger('error')
+    _wLog = logging.getLogger('warning')
+
+    _iLog_file = logging.getLogger("info_file")
 
     _worker_name = current_process().name
     _list_summary = [0, 0, 0, 0]
@@ -77,8 +88,16 @@ def _worker(a, b, c, d, e):
     _rev_content = {'origin': '', 'diff': '', 'result': '',
                     'command': '', 'revision': '', 'date_utc': ''}
     _root_path_db = "db"
+
+    _local_msg = f"Worker '{_worker_name}' started"
+    _iLog.info(_local_msg)
+    _iLog_file.info(_local_msg)
+
     # добавить pid, ppid и имя в сообщения из воркеров
     if d[0] != "ssh" and d[0] != "SSH":
+        _local_msg = f"Worker is supported only SSH proto, " \
+                     f"but was received {d[0]}"
+        _eLog.error(_local_msg)
         sys.exit(1)
 
     try:
@@ -95,12 +114,16 @@ def _worker(a, b, c, d, e):
             else:
                 if _tasks[task]['step'].get("name"):
                     total_steps += 1
+
         _list_summary[3] = total_steps
         a[_worker_name] = _list_summary
 
-        # result = ssh(ipv4=b, login=d[2], passw=d[3], port=d[4],
-        #              cmd="export compact")
         for task_name in _tasks.keys():
+            _local_msg = f"Task -> '{task_name}' started, " \
+                         f"worker -> '{_worker_name}'"
+            _iLog.info(_local_msg)
+            _iLog_file.info(_local_msg)
+
             while True:
                 _virgin_rev = False
                 # check history folder path
@@ -114,6 +137,9 @@ def _worker(a, b, c, d, e):
                         re.sub("#.+\r", "", get_device_config(
                             (b, d[2], d[3], d[4]), d[5]).decode()))
                 elif d[5] == "SNR" or d[5] == "Cisco" or d[5] == "cisco":
+                    _local_msg = f"Worker is supported only Mikrotik vendor, " \
+                                 f"but was received {d[5]}"
+                    _eLog.error(_local_msg)
                     sys.exit(1)
 
                 r = get_step(_tasks, task_name, _step_names)
@@ -123,6 +149,10 @@ def _worker(a, b, c, d, e):
                         _virgin_rev = True
                 else:
                     _step_names.clear()
+                    _local_msg = f"Task -> '{task_name}' ended, " \
+                                 f"worker -> '{_worker_name}'"
+                    _iLog.info(_local_msg)
+                    _iLog_file.info(_local_msg)
                     break
 
                 if _virgin_rev:
@@ -144,26 +174,64 @@ def _worker(a, b, c, d, e):
                             _prev_rev = json.load(_db)
                     if int(_prev_rev['revision']) == _rev:
                         _rev_content['revision'] = _rev + 1
+                        if _prev_rev['result'] != _rev_content['origin']:
+                            _wLog.warning("The latest revision is not equal to"
+                                          " the current one! "
+                                          "Probably something changed, "
+                                          f"worker -> {_worker_name}")
                     else:
+                        _local_msg = f"The file containing the latest version" \
+                                     f" has been modified manually, " \
+                                     f"filename - {_prev_rev_name}"
+                        _eLog.error(_local_msg)
                         sys.exit(1)
 
                     _rev_content['diff'] = get_hash(r[0]["command"])
-                    if _rev_content['diff'] != _prev_rev['diff']:
-                        pass
-                    else:
-                        _iLog.info("diff is equal to previous")
+                    if _rev_content['diff'] == _prev_rev['diff']:
+                        _local_msg = f"diff is equal to previous"
+                        _eLog.error(_local_msg)
                         _list_summary[0] = 1
                         a[_worker_name] = _list_summary
-                        # sys.exit(1)
+                        sys.exit(1)
 
                 _rev_content['command'] = r[0]['command']
+                if r[0]['output'] == "extend":
+                    _local_msg = f"Step name -> '{r[0]['name']}', " \
+                                 f"Task -> '{task_name}'"\
+                                 f",\n Full step -> " \
+                                 f"{json.dumps(r[0], indent=2)}, " \
+                                 f"worker -> '{_worker_name}'"
+                    _iLog.info(_local_msg)
+                    _iLog_file.info(_local_msg)
+                else:
+                    _local_msg = f"Step name -> '{r[0]['name']}', " \
+                                 f"Task -> '{task_name}'"\
+                                 f",\n worker -> '{_worker_name}'"
+                    _iLog.info(_local_msg)
+                    _iLog_file.info(_local_msg)
                 if d[5] == "Mikrotik":
+                    result = ssh(ipv4=b, login=d[2], password=d[3], port=d[4],
+                                 cmd=f"{r[0]['command']}")
                     _rev_content['result'] = get_hash(
                         re.sub("#.+\r", "",
                                get_device_config((b, d[2], d[3], d[4]),
                                                  "Mikrotik").decode()))
+                    if _rev_content['result'] == _rev_content['origin']:
+                        _list_summary[0] += 1
+
+                    _local_msg = f"Step name -> '{r[0]['name']}', " \
+                                 f"Task -> '{task_name}'" \
+                                 f",\n Response from device -> " \
+                                 f"{result.decode()}, " \
+                                 f"worker -> '{_worker_name}'"
+                    _iLog.info(_local_msg)
+                    _iLog_file.info(_local_msg)
                 else:
+                    _local_msg = f"Worker is supported only Mikrotik vendor, " \
+                                 f"but was received {d[5]}"
+                    _eLog.error(_local_msg)
                     sys.exit(1)
+
                 _rev_name = f"{_rev_content['revision']}_" \
                             f"{_rev_content['result'][0:16:2]}_" \
                             f"{_rev_content['result'][16::2]}"
@@ -179,13 +247,15 @@ def _worker(a, b, c, d, e):
                 with open(f"{_root_path_db}/{_worker_name}/{_rev_name}", "w",
                           encoding="utf8") as rev_file:
                     json.dump(fp=rev_file, obj=_rev_content)
-                # saves the result
+
+                _local_msg = f"Save revision file -> '{_rev_name}', " \
+                             f"worker -> '{_worker_name}'"
+                _iLog.info(_local_msg)
+                _iLog_file.info(_local_msg)
+
                 _list_summary[1] = _list_summary[3] - \
                                    _list_summary[0] - _list_summary[2]
                 a[_worker_name] = _list_summary
-
-        sleep(randint(1, 4))
-        _iLog.info(f'Worker - {current_process().name}')
     except OSError as err:
         _list_summary[2] = _list_summary[3] - \
                            _list_summary[0] + _list_summary[1]
@@ -210,6 +280,7 @@ def proc_creator(_pconfig: List, plist: List) -> List:
 
 
 if __name__ == '__main__':
+    set_start_method('spawn')
     description = "Network device configuration management system aka Nerlord"
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("-m", "--mode", type=str, nargs=1,
@@ -237,27 +308,43 @@ if __name__ == '__main__':
                         version=f'{description}, {__license__} license, '
                                 f'{__author__}, version: {__version__} ',
                         action='version')
+    parser.add_argument("--ip", type=str, nargs=1, default="127.0.0.1",
+                        help="IPv4 address that exists in your system which "
+                             "will bind to the server", metavar="")
+    parser.add_argument("--port", type=int, nargs=1, default=8888, metavar="",
+                        help="IPv4 port. Max value is 65535.")
+
     args = parser.parse_args()
     # logger setup block
     if args.mode[0] == "CLI":
-        from CLI import verify, choose_ip
+        from CLI import verify, choose_ip, get_header, ssh
 
         queue = Queue(-1)
         listener = Process(target=listener_setup, args=(queue,))
         listener.start()
         root = queue_handler_setup(queue)
+
+        iLog_h_con = logging.getLogger("info_h_con")
+        iLog_b_con = logging.getLogger("info_b_con")
+
+        iLog_file = logging.getLogger("info_file")
+        eLog = logging.getLogger("error")
     elif args.mode[0] == "API":
         from API import redirect, do_GET, do_POST, web, asyncio
 
         load_config()
-        # _loggers - ['critical', 'error', 'warning', 'info',
-        #                 0        1          2        3
-        #              'info_w', 'info_h', 'debug', 'root']
-        #                 4        5         6        7
         _loggers = logger_generator()
-        root = _loggers[3]
+        root = _loggers[7]
+
+        _fmt = "%(asctime)s, %(levelname)s: %(message)s"
+        _datefmt = "%d-%m-%Y %I:%M:%S %p"
+        _style = "%"
+
+        root.handlers[0].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
+        root.handlers[1].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
     else:
-        root = logging.getLogger()
+        root = iLog_file = iLog_h_con = iLog_b_con =\
+            eLog = logging.getLogger()
 
     try:
         py_version = f"{version_info[0]}.{version_info[1]}.{version_info[2]}"
@@ -274,40 +361,25 @@ if __name__ == '__main__':
             invalid_args = ""
             miss_req_args = ""
             if args.mode[0] == "API":
-                if args.inventory is not None:
-                    if len(invalid_args) == 0:
-                        invalid_args += f"{args.inventory[0]}"
-                    else:
-                        invalid_args += f", {args.inventory[0]}"
-                if args.playbook is not None:
-                    if len(invalid_args) == 0:
-                        invalid_args += f"{args.playbook[0]}"
-                    else:
-                        invalid_args += f", {args.playbook[0]}"
-                if args.format is not None:
-                    if len(invalid_args) == 0:
-                        invalid_args += f"{args.format[0]}"
-                    else:
-                        invalid_args += f", {args.format[0]}"
-                if len(invalid_args) != 0:
-                    msg = msg_patterns[4] + invalid_args
-                    root.info(msg)
-                    raise argparse.ArgumentError(None, msg)
-                else:
-                    if "3.7" in py_version:
-                        asyncio.set_event_loop_policy(
-                            asyncio.WindowsProactorEventLoopPolicy())
-                    app = web.Application()
-                    app.add_routes([web.get("/", redirect)])
-                    app.add_routes([web.get("/api", do_GET, name="api")])
-                    app.add_routes([web.get("/post", do_POST)])
-                    app.add_routes([web.post("/post", do_POST)])
-                    web.run_app(host="127.0.0.1", port=8888, app=app,
-                                access_log=root,
-                                access_log_format='%a %t "%{SecureRequest}o" %s'
-                                                  ' %b "%{Referer}i" "%{'
-                                                  'User-Agent}i"')
+                if "3.7" in py_version and sys.platform == "win32":
+                    asyncio.set_event_loop_policy(
+                        asyncio.WindowsProactorEventLoopPolicy())
+                app = web.Application()
+                app.add_routes([web.get("/", redirect)])
+                app.add_routes([web.get("/api", do_GET, name="api")])
+                app.add_routes([web.get("/post", do_POST)])
+                app.add_routes([web.post("/post", do_POST)])
+                web.run_app(host=args.ip, port=args.port[0], app=app,
+                            access_log=root,
+                            access_log_format='%a %t "%{SecureRequest}o" %s'
+                                              ' %b "%{Referer}i" "%{'
+                                              'User-Agent}i" %{text}o')
             elif args.mode[0] == "CLI":
+                msg = f"[{args.mode[0]} mode ON] "
+
+                iLog_file.info(get_header(msg, "file"))
+                iLog_h_con.info(get_header(msg))
+
                 if args.inventory is None:
                     if len(miss_req_args) == 0:
                         miss_req_args += f" --inventory (-i) "
@@ -324,39 +396,45 @@ if __name__ == '__main__':
                         if len(invalid_args) == 0:
                             invalid_args += f"{args.format[0]}"
                         msg = msg_patterns[4] + invalid_args
-                        root.info(msg)
                         raise argparse.ArgumentError(None, msg)
                     else:
                         if os.path.exists(args.playbook[0]):
                             resp = verify(filepath=args.playbook[0],
                                           filename="playbook.yaml")
                             if resp == "playbook.yaml is Ok":
-                                root.info(f"Verify: {resp}")
+                                msg = f"Verified: {resp}"
+                                iLog_b_con.info(msg)
+                                iLog_file.info(msg)
                             else:
-                                root.info(f"Verify: {resp}")
+                                eLog.error(f"Verify: {resp}")
                                 raise Exception(resp)
                         else:
                             msg: Text = msg_patterns[3] + args.playbook[0]
-                            root.info(msg)
+                            eLog.error(msg)
                             raise FileNotFoundError(msg)
 
                         if os.path.exists(args.inventory[0]):
                             resp = verify(filepath=args.inventory[0],
                                           filename="inventory.yaml")
                             if resp == "inventory.yaml is Ok":
-                                root.info(f"Verify: {resp}")
+                                msg = f"Verified: {resp}"
+                                iLog_b_con.info(msg)
+                                iLog_file.info(msg)
                             else:
-                                root.info(f"Verify: {resp}")
+                                eLog.info(f"Verify: {resp}")
                                 raise Exception(resp)
                         else:
                             msg: Text = msg_patterns[2] + args.inventory[0]
-                            root.info(msg)
+                            eLog.info(msg)
                             raise FileNotFoundError(msg)
 
                     with open(args.inventory[0], "r", encoding="utf8") as file:
                         data = safe_load(file)
 
-                    #debug prints
+                    msg = "[Detecting available devices by ICMP] wait... "
+                    iLog_h_con.info(get_header(msg))
+                    iLog_file.info(get_header(msg, "file"))
+
                     with Manager() as mgr:
                         block = mgr.BoundedSemaphore(2)
                         tasks_summary: Dict = mgr.dict()
@@ -365,6 +443,7 @@ if __name__ == '__main__':
                                                  queue]
                         _patterns: List[Text] = ["IPv4 адрес не отвечает"]
                         _pList: List = []
+                        _msg = "Detected IP -> "
                         for i in data:
                             for j in data[i]:
                                 if j != "individual":
@@ -374,8 +453,10 @@ if __name__ == '__main__':
                                             ip, rtt, nextip = \
                                                 choose_ip(host_type=j,
                                                           data=data[i][j])
-                                            print(ip, rtt, nextip, -2)
+
                                             if rtt != -1 and rtt >= 0:
+                                                iLog_b_con.info(_msg + ip)
+                                                iLog_file.info(_msg + ip)
                                                 _var_for_worker[1] = ip
                                                 _var_for_worker[3] = (
                                                     data[i]['protocol'][0],
@@ -396,11 +477,14 @@ if __name__ == '__main__':
                                                         choose_ip(host_type=j,
                                                                   data=data[i][
                                                                       j],
-                                                                  range_ip=nextip)
+                                                                  range_ip=
+                                                                  nextip)
                                                 else:
                                                     break
-                                            print(ip, rtt, nextip, -1)
+
                                             if rtt != -1 and rtt >= 0:
+                                                iLog_b_con.info(_msg + ip)
+                                                iLog_file.info(_msg + ip)
                                                 _var_for_worker[1] = ip
                                                 _var_for_worker[3] = (
                                                     data[i]['protocol'][0],
@@ -417,8 +501,10 @@ if __name__ == '__main__':
                                             ip, rtt, _ = \
                                                 choose_ip(host_type=j,
                                                           data=data[i][j])
-                                            print(ip, rtt, 1)
+
                                             if rtt != -1 and rtt >= 0:
+                                                iLog_b_con.info(_msg + ip)
+                                                iLog_file.info(_msg + ip)
                                                 _var_for_worker[1] = ip
                                                 _var_for_worker[3] = (
                                                     data[i]['protocol'][0],
@@ -445,8 +531,12 @@ if __name__ == '__main__':
                                                     ip, rtt, nextip = choose_ip(
                                                         host_type=z,
                                                         data=_algo_type)
-                                                    print(ip, rtt, nextip, 2)
+
                                                     if rtt != -1 and rtt >= 0:
+                                                        iLog_b_con.info(
+                                                            _msg + ip)
+                                                        iLog_file.info(
+                                                            _msg + ip)
                                                         _var_for_worker[1] = ip
                                                         _var_for_worker[3] = (
                                                             _rhd['protocol'][
@@ -463,20 +553,24 @@ if __name__ == '__main__':
                                                              f"{i}_{ip}"],
                                                             _pList)
                                                     while True:
-                                                        print(ip)
-                                                        # проверить и пофиксить вариант, когда ip недоступен и возвращается строка о недоступности
                                                         if ip != _algo_type[1]\
                                                                 and ip != \
                                                                 _patterns[0]:
                                                             ip, rtt, nextip = \
                                                                 choose_ip(
                                                                     host_type=z,
-                                                                    data=_algo_type,
-                                                                    range_ip=nextip)
+                                                                    data=
+                                                                    _algo_type,
+                                                                    range_ip=
+                                                                    nextip)
                                                         else:
                                                             break
-                                                    print(ip, rtt, nextip, 3)
+
                                                     if rtt != -1 and rtt >= 0:
+                                                        iLog_b_con.info(
+                                                            _msg + ip)
+                                                        iLog_file.info(
+                                                            _msg + ip)
                                                         _var_for_worker[1] = ip
                                                         _var_for_worker[3] = (
                                                             _rhd['protocol'][
@@ -496,8 +590,12 @@ if __name__ == '__main__':
                                                     ip, rtt, _ = choose_ip(
                                                         host_type=z,
                                                         data=_algo_type)
-                                                    print(ip, rtt, 4)
+
                                                     if rtt != -1 and rtt >= 0:
+                                                        iLog_b_con.info(
+                                                            _msg + ip)
+                                                        iLog_file.info(
+                                                            _msg + ip)
                                                         _var_for_worker[1] = ip
                                                         _var_for_worker[3] = (
                                                             _rhd['protocol'][
@@ -513,8 +611,16 @@ if __name__ == '__main__':
                                                              _var_for_worker,
                                                              f"{i}_{ip}"],
                                                             _pList)
-                        print("=" * 15)
-                        root_h = logging.getLogger('info_h')
+
+                        msg = f"Detected {len(_pList)} device(s) "
+                        iLog_b_con.info(msg)
+                        iLog_file.info(msg)
+
+                        msg = "[Task(s) processing started] "
+                        iLog_h_con.info(get_header(msg))
+                        iLog_file.info(get_header(msg, "file"))
+                        sleep(1)
+
                         for _, p in enumerate(_pList):
                             block.acquire()
                             p.start()
@@ -523,30 +629,36 @@ if __name__ == '__main__':
                                 p.join()
 
                         _ok_status = _changed_status = _error_status = 0
-                        _total = 0
+                        _total = _total_task = 0
 
                         for _k, v in _var_for_worker[0].items():
                             _ok_status += v[0]
                             _changed_status += v[1]
                             _error_status += v[2]
-                            _total += 1
+                            if v[0] or v[1] or v[2] != 0:
+                                _total += 1
                         sleep(1)
+
+                        _total_task = _ok_status + _changed_status +\
+                                      _error_status
                         msg = "[Work report] "
-                        ll = os.get_terminal_size().columns
-                        ll -= len(msg) + 6
-                        msg += int(ll) * "*"
-                        root_h.info(msg)
-                        _total1 = _ok_status + _changed_status + _error_status
-                        msg2 = f"ok: {_ok_status}, changed: {_changed_status},"\
-                               f" error: {_error_status} out of {_total1}" \
-                               f" in {_total} processes"
-                        root.info(msg2)
+                        iLog_h_con.info(get_header(msg))
+                        iLog_file.info(get_header(msg, "file"))
 
-
-
+                        iLog_b_con.info(f"{COLORS['green']}ok: {_ok_status},"
+                                        f" {COLORS['reset']}{COLORS['yellow']} "
+                                        f"changed: {_changed_status},"
+                                        f"{COLORS['reset']}{COLORS['red']} "
+                                        f"error: {_error_status}"
+                                        f"{COLORS['reset']}{COLORS['green']} "
+                                        f"out of {_total_task} in {_total} "
+                                        f"processes")
+                        iLog_file.info(f"ok: {_ok_status}, changed: "
+                                         f"{_changed_status}, error: "
+                                         f"{_error_status} out of {_total_task}"
+                                         f" in {_total} processes")
                 else:
                     msg: Text = msg_patterns[1] + miss_req_args
-                    root.info(msg)
                     raise argparse.ArgumentError(None, msg)
 
             elif args.mode[0] == "PINFO":
@@ -581,7 +693,6 @@ if __name__ == '__main__':
                         msg: Text = msg_patterns[2] + args.inventory[0]
                         root.info(msg)
                         raise FileNotFoundError(msg)
-
                 else:
                     msg: Text = msg_patterns[1] + miss_req_args
                     root.info(msg)
@@ -593,17 +704,14 @@ if __name__ == '__main__':
             root.info(msg_patterns[0])
 
     except FileNotFoundError as err:
-        root.info(f"FileNotFoundError: {err}")
+        eLog.error(f"FileNotFoundError: {err}")
     except argparse.ArgumentError as err:
-        root.info(f"ArgumentError: {err}")
-    except web.HTTPRedirection as err:
-        print(err, 1)
-    except web.HTTPFound as err:
-        print(err, 2)
+        eLog.error(f"ArgumentError: {err}")
     except AttributeError as err:
-        root.info(f"AttributeError: {err}")
+        eLog.error(f"AttributeError: {err}")
     except Exception as err:
-        root.info(f"Exception: {err}")
+        eLog.error(f"Exception: {err}")
     finally:
         if args.mode[0] == "CLI":
+            iLog_file.info("*" * 51)
             queue.put_nowait(None)

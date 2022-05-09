@@ -141,10 +141,10 @@ def verify(filepath: Text, filename: Text) -> Union[str, YAMLError]:
                             keys.add(j)
 
                 if len(keys) != 5:
-                    return f"В файле {filename} в задании {i} " \
-                           f"обнаружены лишние ключи"
+                    return f"В файле - {filename}, в задании - {i} " \
+                           f"обнаружены лишние ключи!"
                 allowed_args: set = {"name", "step", "steps", "command",
-                                    "output", "nameS"}
+                                     "output", "nameS"}
 
                 if len(allowed_args.difference(keys)) == 1 and \
                         ("step" in allowed_args.difference(keys) or
@@ -156,8 +156,9 @@ def verify(filepath: Text, filename: Text) -> Union[str, YAMLError]:
                     for k in allowed_args.difference(keys):
                         if k != "step" and k != "steps":
                             invalid_args += "{}, ".format(k)
-                    return f"В файле {filename} в задании {i} не обнаружены" \
-                           f" обязательные ключи {invalid_args.rstrip(', ')}"
+                    return f"В файле - {filename}, в задании - {i} не " \
+                           f"обнаружены обязательные ключи" \
+                           f" {invalid_args.rstrip(', ')}!"
                 keys.clear()
             return f"{filename} is Ok"
         else:
@@ -311,3 +312,13 @@ def get_device_config(a: Tuple, b: Text) -> bytes:
                    port=a[3], cmd="export compact")
     else:
         return ssh(ipv4=a[0], login=a[1], password=a[2], port=a[3], cmd="")
+
+
+def get_header(a: Text, mode: Text = "console") -> Text:
+    if mode == "console":
+        asterisk_mul = os.get_terminal_size().columns
+        msg = a
+        msg += "*" * ((asterisk_mul - len(msg)) - 4 - 1 - 1 - 24)
+    else:
+        msg = 5 * "*" + a + "*" * 5
+    return msg
