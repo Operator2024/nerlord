@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import platform
 import re
 from typing import Text
@@ -7,7 +8,39 @@ from typing import Text
 import asyncssh
 from aiohttp import web
 
-from loggers import nlog
+from loggers import load_config, logger_generator
+
+if __name__ != "__main__":
+    load_config()
+    _loggers = logger_generator()
+
+    root = _ilog = _loggers[7]
+    _eLog = _loggers[1]
+
+    _fmt = "%(asctime)s, %(levelname)s: %(message)s"
+    _datefmt = "%d-%m-%Y %I:%M:%S %p"
+    _style = "%"
+
+    root.handlers[0].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
+    root.handlers[1].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
+    _eLog.handlers[0].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
+    _eLog.handlers[1].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
+    root.info("*" * 25 + " [API mode ON] " + "*" * 25)
+
+    msg_patterns = [
+        "Обязательный параметр 'vendor' отсутствует!",
+        "Обязательный параметр 'command' отсутствует!",
+        "API режим работает только по ssh!",
+        "Обязательный параметр 'protocol' отсутствует!",
+        "Обязательный параметр 'host' отсутствует!",
+        "Обязательный параметр 'port' отсутствует!",
+        "Используемый метод не разрешен для данного URL!",
+        "Обязательный параметр отсутствует"
+    ]
+
+else:
+    raise Exception(f"Name '{__name__}' is not equal"
+                    f" to {__file__.split('/')[-1].rstrip('.py')}")
 
 
 async def ping(ip: Text) -> int:
@@ -36,8 +69,7 @@ async def do_GET(request: web.BaseRequest) -> web.Response:
                "Content-Type": "text/plain"}
     if str(request.rel_url) == "/api":
         return web.Response(text=f"Используйте следующий адрес для запроса"
-                                 f" - {request.url}",
-                            status=200)
+                                 f" - {request.url}", status=200)
     if request.query_string:
         if request.method == "GET":
             query_params = dict()
@@ -51,34 +83,64 @@ async def do_GET(request: web.BaseRequest) -> web.Response:
                 query_params[_tmp[0]] = _tmp[1]
 
             if query_params.get("vendor") is None:
-                return web.Response(text="Ключевой параметр (vendor) "
-                                         "отсутствует!", status=200)
+                msg = msg_patterns[0]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
             else:
                 if query_params.get("command") is None:
-                    return web.Response(text="Ключевой параметр (command) "
-                                             "отсутствует!", status=200)
+                    msg = msg_patterns[1]
+                    headers['text'] = msg
+                    _eLog.error(msg)
+                    return web.Response(text=msg, status=200, headers=headers)
                 else:
                     msg = f"Переданная команда ({query_params['command']}) " \
                           f"не должна содержать изменяющих конфигурацию " \
                           f"устройства модификаторов!"
                     if query_params["vendor"] == "Mikrotik":
-                        if "set" in query_params["command"] or\
+                        if "set" in query_params["command"] or \
                                 "add" in query_params["command"] or \
                                 "remove" in query_params["command"] or \
-                                "rem" in query_params["command"] or\
+                                "rem" in query_params["command"] or \
                                 "unset" in query_params["command"] or \
                                 "edit" in query_params["command"] or \
                                 "enable" in query_params["command"] or \
                                 "disable" in query_params["command"]:
-                            logger = nlog("info")
-                            logger.info(msg)
-                            return web.Response(text=msg, status=200)
+                            headers['text'] = msg
+                            _eLog.error(msg)
+                            return web.Response(text=msg, status=200,
+                                                headers=headers)
                     elif query_params["vendor"] == "SNR":
                         if "show" not in query_params["command"] and \
                                 "sh" not in query_params["command"]:
-                            logger = nlog("info")
-                            logger.info(msg)
-                            return web.Response(text=msg, status=200)
+                            headers['text'] = msg
+                            _eLog.error(msg)
+                            return web.Response(text=msg, status=200,
+                                                headers=headers)
+
+            if query_params.get("protocol"):
+                if query_params["protocol"] != "ssh":
+                    msg = msg_patterns[2]
+                    headers['text'] = msg
+                    _eLog.error(msg)
+                    return web.Response(text=msg, status=200, headers=headers)
+            else:
+                msg = msg_patterns[3]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
+
+            if query_params.get("host") is None:
+                msg = msg_patterns[4]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
+
+            if query_params.get("port") is None:
+                msg = msg_patterns[5]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
 
             for i in ["login", "password", "command"]:
                 try:
@@ -105,10 +167,9 @@ async def do_GET(request: web.BaseRequest) -> web.Response:
                                               f"{i}={asterisk}", _path_qs)
                     idx += 1
                 except AttributeError as err:
-                    logger = nlog("info")
-                    msg = f"AttributeError: обязательный ключ {i} " \
-                          f"отсутствует - {err}"
-                    logger.info(msg)
+                    msg = f"Обязательный параметр отсутствует - {i},{ err}"
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
 
             del _path
@@ -137,49 +198,60 @@ async def do_GET(request: web.BaseRequest) -> web.Response:
                         result = resp.stdout + resp.stderr
 
                 except KeyError as err:
-                    logger = nlog("info")
-                    msg = f"KeyError: обязательный ключ {err} отсутствует"
-                    logger.info(msg)
+                    msg = msg_patterns[7] + f"- {err}"
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.PermissionDenied as err:
-                    logger = nlog("info")
                     msg = f"{err}: ошибка аутентификации, возможно, " \
                           f"логин или пароль указаны неверно!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.ConnectionLost as err:
-                    logger = nlog("info")
                     msg = f"{err}: соединение было разорвано!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.TimeoutError as err:
-                    logger = nlog("info")
                     msg = f"TimeoutError: не удалось подключиться к узлу в " \
                           f"течение заданного времени! - {err}"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except ConnectionError as err:
-                    logger = nlog("info")
                     msg = f"ConnectionError: {err}, возможно, хост или порт " \
                           f"указаны неверно!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.ProcessError as err:
-                    logger = nlog("info")
                     msg = f"ProcessError: {err}, ошибка SSH!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except Exception as err:
-                    logger = nlog("info")
                     msg = f"Exception: {err}"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
-    return web.Response(text=f"Результат - {result}", headers=headers,
-                        status=200)
+            else:
+                msg = f"IP '{query_params['host']}' недоступен"
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, headers=headers, status=200)
+        else:
+            msg = msg_patterns[6]
+            headers['text'] = msg
+            return web.Response(text=msg, headers=headers, status=405)
+
+    result = result.rstrip("\r\n").lstrip("\r\n")
+    msg = f"Результат - {result}"
+    headers['text'] = msg
+    return web.Response(text=msg, headers=headers, status=200)
 
 
 async def do_POST(request: web.BaseRequest) -> web.Response:
-    # headers = {"Content-Type": "application/json; charset=UTF-8"}
     headers = {"Content-Language": "en-US, ru-RU, en, ru",
                "Content-Type": "text/plain"}
     if request.content:
@@ -195,15 +267,15 @@ async def do_POST(request: web.BaseRequest) -> web.Response:
             )
 
             if content.get("vendor") is None:
-                logger = nlog("info")
-                msg = f"KeyError: обязательный ключ 'vendor' отсутствует"
-                logger.info(msg)
+                msg = msg_patterns[0]
+                headers['text'] = msg
+                _eLog.error(msg)
                 return web.Response(text=msg, headers=headers, status=200)
             else:
                 if content.get("command") is None:
-                    logger = nlog("info")
-                    msg = f"KeyError: обязательный ключ 'command' отсутствует"
-                    logger.info(msg)
+                    msg = msg_patterns[1]
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 else:
                     msg = f"Используемая команда ({content['command']}) не " \
@@ -218,16 +290,41 @@ async def do_POST(request: web.BaseRequest) -> web.Response:
                                 "edit" in content["command"] or \
                                 "enable" in content["command"] or \
                                 "disable" in content["command"]:
-                            logger = nlog("info")
-                            logger.info(msg)
-                            return web.Response(text=msg, status=200)
+                            headers['text'] = msg
+                            _eLog.error(msg)
+                            return web.Response(text=msg, status=200,
+                                                headers=headers)
                     elif content["vendor"] == "SNR":
                         if "show" not in content["command"] and \
                                 "sh" not in content["command"]:
-                            logger = nlog("info")
-                            logger.info(msg)
+                            headers['text'] = msg
+                            _eLog.error(msg)
                             return web.Response(text=msg, headers=headers,
                                                 status=200)
+
+            if content.get("protocol"):
+                if content["protocol"] != "ssh":
+                    msg = msg_patterns[2]
+                    headers['text'] = msg
+                    _eLog.error(msg)
+                    return web.Response(text=msg, status=200, headers=headers)
+            else:
+                msg = msg_patterns[3]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
+
+            if content.get("host") is None:
+                msg = msg_patterns[4]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
+
+            if content.get("port") is None:
+                msg = msg_patterns[5]
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, status=200, headers=headers)
 
             r = await ping(ip=content["host"])
             if r == 0:
@@ -246,47 +343,54 @@ async def do_POST(request: web.BaseRequest) -> web.Response:
                         result = resp.stdout + resp.stderr
 
                 except KeyError as err:
-                    logger = nlog("info")
-                    msg = f"KeyError: обязательный ключ {err} отсутствует"
-                    logger.info(msg)
+                    msg = msg_patterns[7] + f"- {err}"
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.PermissionDenied as err:
-                    logger = nlog("info")
                     msg = f"{err}: ошибка аутентификации, возможно, логин " \
                           f"или пароль указаны неверно!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.ConnectionLost as err:
-                    logger = nlog("info")
                     msg = f"{err}: соединение было разорвано!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.TimeoutError as err:
-                    logger = nlog("info")
                     msg = f"TimeoutError: не удалось подключиться к узлу в" \
                           f" течение заданного времени! - {err}"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except ConnectionError as err:
-                    logger = nlog("info")
                     msg = f"ConnectionError: {err}, возможно, хост или порт " \
                           f"указаны неверно!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except asyncssh.ProcessError as err:
-                    logger = nlog("info")
                     msg = f"ProcessError: {err}, ошибка SSH!"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
                 except Exception as err:
-                    logger = nlog("info")
                     msg = f"Exception: {err}"
-                    logger.info(msg)
+                    headers['text'] = msg
+                    _eLog.error(msg)
                     return web.Response(text=msg, headers=headers, status=200)
-
+            else:
+                msg = f"IP '{content['host']}' недоступен"
+                headers['text'] = msg
+                _eLog.error(msg)
+                return web.Response(text=msg, headers=headers, status=200)
         else:
-            return web.Response(text="Используемый метод не разрешен "
-                                     "для данного URL!",
-                                headers=headers, status=405)
-    return web.Response(text=f"Результат - {result}", headers=headers,
-                        status=200)
+            msg = msg_patterns[6]
+            headers['text'] = msg
+            return web.Response(text=msg, headers=headers, status=405)
+
+    result = result.rstrip("\r\n").lstrip("\r\n")
+    msg = f"Результат - {result}"
+    headers['text'] = msg
+    return web.Response(text=msg, headers=headers, status=200)

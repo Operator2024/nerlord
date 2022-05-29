@@ -1,23 +1,50 @@
 ---
 version: 1
 disable_existing_loggers: True
+filters:
+  filter:
+    () : loggers.CustomFilter
+    param:
+      {
+        'NOTSET': 0, 'DEBUG': 10, 'INFO_B_CON': 20, 'INFO_H_CON': 20,
+        "INFO_FILE": 20, 'WARNING': 30, 'ERROR': 40, 'CRITICAL': 50
+      }
 loggers:
-  error:
-    level: ERROR
-    handlers: [file]
-    propagate: False
-  root:
-    level: WARNING
-    handlers: [file]
-    propagate: False
-  info:
-    level: INFO
+  critical:
+    level: CRITICAL
     handlers: [file, console]
     propagate: False
+    filters: [filter]
+  error:
+    level: ERROR
+    handlers: [error_b_console, file]
+    propagate: False
+    filters: [filter]
+  warning:
+    level: WARNING
+    handlers: [warning_b_console, file]
+    propagate: False
+    filters: [filter]
+  info_b_con:
+    level: INFO
+    handlers: [info_b_console]
+    propagate: False
+    filters: [filter]
+  info_h_con:
+    level: INFO
+    handlers: [info_h_console]
+    propagate: False
+    filters: [filter]
+  info_file:
+    level: INFO
+    handlers: [file]
+    propagate: False
+    filters: [filter]
   debug:
     level: DEBUG
     handlers: [file_debug]
     propagate: False
+    filters: [filter]
 handlers:
   file:
     class: logging.handlers.RotatingFileHandler
@@ -31,8 +58,28 @@ handlers:
     delay: False
   console:
     class: logging.StreamHandler
-    level: INFO
+    level: NOTSET
     formatter: standard
+    stream: ext://sys.stdout
+  info_h_console:
+    class: logging.StreamHandler
+    level: NOTSET
+    formatter: con_head_default
+    stream: ext://sys.stdout
+  info_b_console:
+    class: logging.StreamHandler
+    level: NOTSET
+    formatter: con_body_default_info
+    stream: ext://sys.stdout
+  warning_b_console:
+    class: logging.StreamHandler
+    level: NOTSET
+    formatter: con_body_default_warning
+    stream: ext://sys.stdout
+  error_b_console:
+    class: logging.StreamHandler
+    level: NOTSET
+    formatter: con_body_default_error
     stream: ext://sys.stdout
   file_debug:
     class: logging.handlers.RotatingFileHandler
@@ -45,8 +92,28 @@ handlers:
     encoding: utf8
     delay: False
 formatters:
+  con_head_default:
+    format: '*********************** %(levelname)s: %(message)s'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+    class: logging.Formatter
+  con_body_default_info:
+    (): loggers.CustomFormatter
+    format: '%(asctime)s, %(levelname)s: %(message)s'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+  con_body_default_warning:
+    (): loggers.CustomFormatter
+    format: '%(asctime)s, %(levelname)s: %(message)s'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
+  con_body_default_error:
+    (): loggers.CustomFormatter
+    format: '%(asctime)s, %(levelname)s, %(processName)s: %(message)s'
+    datefmt: '%d-%m-%Y %I:%M:%S %p'
+    style: '%'
   standard:
-    format: '%(asctime)s, %(levelname)s: %(message)s, место вызова %(filename)s строка %(lineno)d'
+    format: '%(asctime)s, %(levelname)s: %(message)s'
     datefmt: '%d-%m-%Y %I:%M:%S %p'
     style: '%'
     class: logging.Formatter
@@ -56,4 +123,8 @@ formatters:
     datefmt: '%d-%m-%Y %I:%M:%S %p'
     style: '%'
     class: logging.Formatter
+root:
+  level: NOTSET
+  handlers: [file, console]
+  filters: [filter]
 ...
