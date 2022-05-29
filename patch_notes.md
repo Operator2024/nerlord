@@ -1,3 +1,13 @@
+# Patch notes 0.3.10 (05.29.2022)
+## Module [CLI]
+- Bugfix (Problem with choosing IP in some cases)
+
+## Module [main]
+- Fixed '-m' attribute
+
+## Others
+- Library in **[requirements]** '**aiohttp**', '**async-timeout**', '**asyncssh**', '**bcrypt**', '**cryptography**', '**icmplib**', '**paramiko**' and '**PyYAML**' was updated to latest version
+
 # Patch notes 0.3.9 (05.09.2022)
 ## Module [API]
 - Finalized logging system
@@ -82,3 +92,4 @@
 [CLI]: <https://github.com/Operator2024/nerlord/blob/master/CLI.py>
 [main]: <https://github.com/Operator2024/nerlord/blob/master/main.py>
 [loggers]: <https://github.com/Operator2024/nerlord/blob/master/loggers.py>
+[requirements]: <https://github.com/Operator2024/nerlord/blob/master/requirements.txt>

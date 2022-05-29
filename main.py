@@ -1,4 +1,4 @@
-__version__ = "0.3.9"
+__version__ = "0.3.10"
 
 __author__ = "Vladimir Belomestnykh aka Operator2024"
 
@@ -189,7 +189,7 @@ def _worker(a, b, c, d, e):
                     _rev_content['diff'] = get_hash(r[0]["command"])
                     if _rev_content['diff'] == _prev_rev['diff']:
                         _local_msg = f"diff is equal to previous"
-                        _eLog.error(_local_msg)
+                        _wLog.warning(_local_msg)
                         _list_summary[0] = 1
                         a[_worker_name] = _list_summary
                         sys.exit(1)
@@ -311,8 +311,8 @@ if __name__ == '__main__':
     parser.add_argument("--ip", type=str, nargs=1, default="127.0.0.1",
                         help="IPv4 address that exists in your system which "
                              "will bind to the server", metavar="")
-    parser.add_argument("--port", type=int, nargs=1, default=8888, metavar="",
-                        help="IPv4 port. Max value is 65535.")
+    parser.add_argument("--port", type=str, nargs=1, default="8888",
+                        help="IPv4 port. Max value is 65535.", metavar="")
 
     args = parser.parse_args()
     # logger setup block
@@ -335,6 +335,7 @@ if __name__ == '__main__':
         load_config()
         _loggers = logger_generator()
         root = _loggers[7]
+        eLog = _loggers[1]
 
         _fmt = "%(asctime)s, %(levelname)s: %(message)s"
         _datefmt = "%d-%m-%Y %I:%M:%S %p"
@@ -343,6 +344,8 @@ if __name__ == '__main__':
         root.handlers[0].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
         root.handlers[1].setFormatter(logging.Formatter(_fmt, _datefmt, _style))
     else:
+        print(f"Allowed mode is CLI or API, but not " +
+              f"'{COLORS['red']}{args.mode[0]}{COLORS['reset']}'")
         root = iLog_file = iLog_h_con = iLog_b_con =\
             eLog = logging.getLogger()
 
@@ -369,11 +372,27 @@ if __name__ == '__main__':
                 app.add_routes([web.get("/api", do_GET, name="api")])
                 app.add_routes([web.get("/post", do_POST)])
                 app.add_routes([web.post("/post", do_POST)])
-                web.run_app(host=args.ip, port=args.port[0], app=app,
-                            access_log=root,
-                            access_log_format='%a %t "%{SecureRequest}o" %s'
-                                              ' %b "%{Referer}i" "%{'
-                                              'User-Agent}i" %{text}o')
+                _access_log_format = '%a %t "%{SecureRequest}o" %s %b ' \
+                                     '"%{Referer}i" "%{User-Agent}i" %{text}o'
+                if not isinstance(args.ip, list) and\
+                        not isinstance(args.port, list):
+                    web.run_app(host=args.ip, port=args.port, app=app,
+                                access_log=root,
+                                access_log_format=_access_log_format)
+                elif isinstance(args.ip, list) and\
+                        not isinstance(args.port, list):
+                    web.run_app(host=args.ip[0], port=args.port, app=app,
+                                access_log=root,
+                                access_log_format=_access_log_format)
+                elif not isinstance(args.ip, list) and\
+                        isinstance(args.port, list):
+                    web.run_app(host=args.ip, port=args.port[0], app=app,
+                                access_log=root,
+                                access_log_format=_access_log_format)
+                else:
+                    web.run_app(host=args.ip[0], port=args.port[0], app=app,
+                                access_log=root,
+                                access_log_format=_access_log_format)
             elif args.mode[0] == "CLI":
                 msg = f"[{args.mode[0]} mode ON] "
 

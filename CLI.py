@@ -187,7 +187,7 @@ def choose_ip(host_type: Text, data: Text or List, range_ip: Text = None) -> \
             else:
                 return [data, int(result), None]
         elif isinstance(data, list):
-            best_rtt_max = 0
+            best_rtt_max = -2
             ip = ""
             for addr in data:
                 if isinstance(addr, str):
@@ -201,7 +201,10 @@ def choose_ip(host_type: Text, data: Text or List, range_ip: Text = None) -> \
                             ip = addr
                 else:
                     pass
-            return [ip, int(best_rtt_max), None]
+            if best_rtt_max != -2:
+                return [ip, int(best_rtt_max), None]
+            else:
+                return ["IPv4 адрес не отвечает", result, None]
         else:
             pass
     elif host_type == "host_range":
