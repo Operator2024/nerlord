@@ -5,7 +5,7 @@ attrs==21.4.0
 bcrypt==3.2.2
 cffi==1.15.0
 chardet==4.0.0
-cryptography==37.0.2
+cryptography==39.0.1
 icmplib==3.0.3
 idna==3.3
 multidict==6.0.2
